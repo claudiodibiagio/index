@@ -384,36 +384,40 @@ function chiudiGiostra(g){
    ========================================================================== */
 const BOT=1, ME=0;
 
-/* --- Valutazione di draft ---------------------------------------------- */
+/* --- Valutazione di draft ------------------------------------------------
+   Tarata sui dati: servono 9 carte dal 2 al 7 (Cavaliere, Scudiero ed
+   Equipaggiamento per tre giostre) e non una di più. Tutto il resto della
+   Carovana rende di più se è fatto di figure, che però sono solo 12 in tutto:
+   il draft è una rissa per una risorsa che non basta per due.
+------------------------------------------------------------------------- */
+const BASSE_NECESSARIE = 9;
+
 function valoreDraft(c,carovana,livello){
-  if(!c)return 1.2;                                   // carta coperta: scommessa
-  const mie=carovana;
-  const dieci=mie.filter(x=>x.v===10).length;
-  const giu=mie.filter(isGiullare).length;
-  if(c.v===10){
-    // il 10 scala col numero di ALTRI giullari già in carovana: più ne ho, più vale
-    return 9 + Math.min(giu,5)*1.6 + dieci*1.2;
-  }
-  if(c.v===8) return 6.2 + dieci*0.9;                 // abilita i 10 e scava nel mazzo
-  if(c.v===9) return 4.6 + dieci*0.7 - mie.filter(x=>x.v===9).length*1.9;  // 1-2 bastano
-  // carte 2-7: contano il seme e la capacità di fare 8
-  let v = 2.2;
-  if(c.v===7) v+=1.5;                                 // da solo è già a distanza 1
-  const stessoSeme=mie.filter(x=>x.s===c.s&&x.v<8).length;
-  v += Math.min(stessoSeme,3)*0.55;                   // blocchi di seme: +2 scudiero
-  const coppie=mie.filter(x=>x.v<8&&x.v+c.v===8).length;
-  v += Math.min(coppie,2)*0.7;                        // cavaliere+equipaggiamento = 8
-  if(livello==='facile')v+=c.v*0.25;                  // il bot facile insegue le carte alte
+  const W=PROFILI[livello]||PROFILI.normale;
+  if(!c) return 3.6;                       // coperta: conviene prenderne circa metà
+  const basse=carovana.filter(x=>!isGiullare(x)).length;
+  const giu=carovana.filter(isGiullare).length;
+  const nove=carovana.filter(x=>x.v===9).length;
+  // il principiante vede le figure come carte mediocri e insegue i numeri alti
+  const fig=base=>base*W.draft + 3.4*(1-W.draft);
+
+  if(c.v===10) return fig(10.5+Math.min(giu,5)*1.9);
+  if(c.v===8)  return fig(8.0);
+  if(c.v===9)  return fig(6.6-nove*1.6);
+
+  let v = 2.4 + (c.v===7?0.6:0) + c.v*0.22*(1-W.draft);
+  v += Math.min(carovana.filter(x=>x.s===c.s&&!isGiullare(x)).length,3)*0.5;   // blocchi di seme
+  v += Math.min(carovana.filter(x=>!isGiullare(x)&&x.v+c.v===8).length,2)*0.7; // coppie che fanno 8
+  if(basse>=BASSE_NECESSARIE) v *= 1-0.55*W.draft;   // oltre le nove necessarie rendono poco
   return v;
 }
 function botDraft(g,livello){
-  const gr=g.gruppi[g.gruppoIdx];
-  const car=g.v[BOT].carovana;
+  const gr=g.gruppi[g.gruppoIdx], car=g.v[BOT].carovana;
+  const rum=(PROFILI[livello]||PROFILI.normale).rumore*0.4;
   let best=-1,bs=-Infinity;
   gr.forEach((sl,i)=>{
     if(sl.presa!==null)return;
-    let s=valoreDraft(sl.coperta?null:sl.c,car,livello);
-    if(livello!=='difficile')s+=g.rnd()*1.2;          // un po' di rumore
+    const s=valoreDraft(sl.coperta?null:sl.c,car,livello)+g.rnd()*rum;
     if(s>bs){bs=s;best=i;}
   });
   return best;
@@ -427,9 +431,9 @@ function botDraft(g,livello){
    mira   : quanto ottimizza il Cavaliere verso l'8
 ------------------------------------------------------------------------- */
 const PROFILI={
-  facile:   {attesa:0,   combo:0,   tempi:0,   mira:0.45, rumore:2.6},
-  normale:  {attesa:0.55,combo:0.6, tempi:0.6, mira:0.85, rumore:1.1},
-  difficile:{attesa:1,   combo:1,   tempi:1,   mira:1,    rumore:0}
+  facile:   {attesa:0,   combo:0,   tempi:0,   mira:0.45, draft:0.28, rumore:2.6},
+  normale:  {attesa:0.45,combo:0.45,tempi:0.45,mira:0.75, draft:0.42, rumore:1.4},
+  difficile:{attesa:1,   combo:1,   tempi:1,   mira:1,    draft:1,    rumore:0}
 };
 function potenzialeGiullari(v){
   return v.campo.giullari.length + v.mano.filter(isGiullare).length;
