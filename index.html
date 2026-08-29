@@ -51,13 +51,13 @@ button{font-family:inherit;cursor:pointer;border:none}
 .card.spenta{filter:grayscale(.7) brightness(.5)}
 
 /* ---------- IMPIANTO A DUE COLONNE ---------- */
-#app{display:grid;grid-template-columns:minmax(300px,0.82fr) minmax(0,1.18fr);
+#app{display:grid;grid-template-columns:minmax(280px,0.72fr) minmax(0,1.28fr);
   gap:14px;height:100vh;padding:12px 14px;align-items:stretch;max-width:1700px;margin:0 auto}
-#sinistra{display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}
+#sinistra{display:flex;flex-direction:column;justify-content:center;gap:12px;min-width:0;min-height:0}
 .pannello{border:1px solid rgba(240,212,136,.22);border-radius:12px;
   background:linear-gradient(rgba(255,255,255,.035),rgba(0,0,0,.12));
   padding:12px 14px;display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0}
-#zonaMano{flex:none}
+#zonaMano{flex:none;align-self:stretch}
 #zonaLog{flex:1;min-height:0;align-items:stretch}
 .etichetta{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--oro);
   opacity:.72;text-align:center}
@@ -122,10 +122,9 @@ button{font-family:inherit;cursor:pointer;border:none}
 .hint{font-size:12px;opacity:.82;text-align:center;line-height:1.45;min-height:17px;width:100%}
 
 /* ---------- LA CRONACA ---------- */
-#log{flex:1;min-height:0;overflow-y:auto;font-size:12px;line-height:1.6;
-  opacity:.88;padding-right:6px}
-#log div{padding:2px 0;border-bottom:1px solid rgba(240,212,136,.07)}
-#log .me{color:#a8d9b0}#log .bot{color:#e2b3ae}#log .sys{color:var(--oro2)}
+.avviso{font-size:12.5px;line-height:1.5;text-align:center;min-height:34px;
+  max-width:640px;padding:4px 10px;opacity:.86;color:var(--crema)}
+.avviso b{color:var(--oro2);font-weight:600}
 
 /* ---------- OVERLAY ---------- */
 .ov{position:fixed;inset:0;background:rgba(10,16,12,.86);display:flex;align-items:center;
@@ -199,7 +198,6 @@ button{font-family:inherit;cursor:pointer;border:none}
 @media(max-width:880px){
   #app{grid-template-columns:1fr;height:auto;align-items:start}
   #centro{order:-1}
-  #zonaLog{max-height:220px}
   .board{gap:10px;padding:10px}
 }
 </style>
@@ -214,14 +212,11 @@ button{font-family:inherit;cursor:pointer;border:none}
       <div class="hint" id="hint"></div>
       <div class="azioni" id="azioni"></div>
     </section>
-    <section class="pannello" id="zonaLog">
-      <div class="etichetta">Cronaca del viaggio</div>
-      <div id="log"></div>
-    </section>
   </div>
   <main id="centro">
     <div class="titolo" id="titoloGiostra"></div>
     <div class="board" id="board"></div>
+    <div class="avviso" id="avviso"></div>
   </main>
 </div>
 
@@ -280,7 +275,8 @@ function prendiInDraft(g,p,i){
 }
 function iniziaGiostra(g){
   g.giostra++;const i=g.giostra-1;
-  g.assoCorrente=g.mappa[i];g.assoNemico=g.mappa[(i+1)%3];
+  g.iC=i; g.iN=(i+1)%3;
+  g.assoCorrente=g.mappa[g.iC];g.assoNemico=g.mappa[g.iN];
   for(const v of g.v){v.campo=nuovoCampo();v.passato=false;}
   g.attesa=null;
   for(const v of g.v)for(let k=0;k<5&&v.carovana.length;k++)v.mano.push(v.carovana.shift());
@@ -633,9 +629,82 @@ function botConta(g,livello){
 /* ==========================================================================
    3. INTERFACCIA
    ========================================================================== */
+const SERVER='https://giostre.claudio-dibiagio.workers.dev';
+let RETE=null;              // quando si gioca in due: {ws, codice, token, p}
 let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[], ultimaScelta=null, inScarto=false;
 const $=id=>document.getElementById(id);
 const ov=$('ov'), panel=$('panel');
+
+/* ==========================================================================
+   LA RETE — il server è l'arbitro, qui si mandano azioni e si riceve la vista
+   ========================================================================== */
+function inviaAzione(a){
+  if(!RETE||RETE.ws.readyState!==1)return false;
+  RETE.ws.send(JSON.stringify({t:'azione',a}));
+  return true;
+}
+function codiceACaso(){
+  const L='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:4},()=>L[Math.floor(Math.random()*L.length)]).join('');
+}
+function collega(codice,token){
+  codice=codice.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const url=SERVER.replace(/^http/,'ws')+'/ws?codice='+encodeURIComponent(codice)
+    +(token?'&token='+encodeURIComponent(token):'');
+  let ws;
+  try{ ws=new WebSocket(url); }catch(e){ return salaErrore('Indirizzo del server non valido.'); }
+  RETE={ws,codice,token:token||null,p:null};
+  G=null;
+  salaAttesa(codice,'Collegamento in corso…');
+  ws.onopen=()=>salaAttesa(codice,'In attesa dell\'altro viandante…');
+  ws.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    if(m.t==='posto'){
+      RETE.p=m.p; RETE.token=m.token;
+      location.hash='c='+codice+'&t='+m.token;      // così ricaricando rientri
+    }
+    else if(m.t==='attesa') salaAttesa(codice,'In attesa dell\'altro viandante…');
+    else if(m.t==='stato')  mostraStato(m.v,m.R,m.collegati);
+    else if(m.t==='pieno')  salaErrore('Questa partita è già al completo.');
+    else if(m.t==='errore') scrivi(m.m,'sys');
+  };
+  ws.onclose=()=>{ if(RETE&&RETE.ws===ws) salaErrore('Collegamento interrotto.'); };
+  ws.onerror=()=>salaErrore('Non riesco a raggiungere il server.');
+}
+function salaAttesa(codice,msg){
+  ov.hidden=false;ov.classList.remove('laterale');panel.className='panel';
+  panel.innerHTML=`
+    <h2>Partita <span style="letter-spacing:.28em;color:var(--oro2)">${codice}</span></h2>
+    <p>${msg}</p>
+    <p style="font-size:13px;opacity:.75">Manda all'altro viandante il codice
+    <b style="letter-spacing:.22em;color:var(--oro2)">${codice}</b>, oppure direttamente questo indirizzo:</p>
+    <p style="font-size:12px;word-break:break-all;opacity:.6">${location.origin+location.pathname}#c=${codice}</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn ghost" id="annulla">Torna indietro</button>
+    </div>`;
+  $('annulla').onclick=()=>{try{RETE.ws.close()}catch(e){};RETE=null;location.hash='';schermataIniziale();};
+}
+function salaErrore(msg){
+  RETE=null;
+  ov.hidden=false;ov.classList.remove('laterale');panel.className='panel';
+  panel.innerHTML=`<h2>Non ci siamo</h2><p>${msg}</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="indietro">Torna al menu</button></div>`;
+  $('indietro').onclick=()=>{location.hash='';schermataIniziale();};
+}
+
+/** Arriva una vista dal server: la si disegna e basta, senza calcolare nulla. */
+function mostraStato(v,R,collegati){
+  G=v;
+  if(G.fase==='draft'){ ultimaScelta=G.ultima||null; return schermataDraft(); }
+  $('app').hidden=false;
+  if(G.fase==='intergiostra'||G.fase==='fine'){ disegna(); return mostraApplausi(R); }
+  ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
+  // la Conta senza scarti si conferma da sola
+  if(G.fase==='conta'&&!G.v[ME].contaFatta&&G.v[ME].mano.length<=6) inviaAzione({t:'conta',ids:[]});
+  disegna();
+  if(collegati<2) scrivi('L\'altro viandante si è disconnesso: aspetto che rientri.','sys');
+}
 
 function el(tag,cls,txt){const e=document.createElement(tag);
   if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;}
@@ -647,8 +716,10 @@ function cardEl(c,{coperta=false,small=false,ace=false}={}){
   e.title=nomeCarta(c);
   return e;
 }
+/** Una riga sola sotto al tavolo, con le sole informazioni pubbliche. */
 function scrivi(txt,cls){
-  const d=el('div',cls,txt);$('log').prepend(d);
+  if(cls==='privato')return;                 // non si mostra: la vedresti tu e anche chi ti guarda
+  $('avviso').innerHTML=txt;
 }
 
 /* ---------- SCHERMATE ---------- */
@@ -660,6 +731,11 @@ function schermataIniziale(){
     <p>Tre giostre alla corte delle Signore degli Assi. Schiera il Cavaliere di Ventura
     più vicino all'8, difendi il tuo Scudiero dal Guastafeste e accumula Giullari
     per il favore del Regno. Chi ha più Punti Favore diventa il Buffone del Regno.</p>
+    <h2>Con chi giochi</h2>
+    <div class="opt">
+      <button id="vsBot" class="on">Contro il bot<small>Subito, da solo, su questo dispositivo.</small></button>
+      <button id="vsUmano">Contro una persona<small>Due browser, anche lontani. Serve un codice.</small></button>
+    </div>
     <h2>La Carovana</h2>
     <div class="opt" id="optModo">
       <button data-v="completo">Draft completo<small>Sei gruppi da sei carte, scegli tu una a una. Fedele al regolamento.</small></button>
@@ -681,13 +757,54 @@ function schermataIniziale(){
     });
   }
   $('via').onclick=avvia;
+  $('vsBot').onclick=()=>{$('vsBot').classList.add('on');$('vsUmano').classList.remove('on');};
+  $('vsUmano').onclick=schermataRete;
+}
+
+/** Crea o raggiungi una partita a due. */
+function schermataRete(){
+  ov.hidden=false;ov.classList.remove('laterale');panel.className='panel';
+  panel.innerHTML=`
+    <h1>Due viandanti</h1>
+    <div class="sub">una partita, due browser</div>
+    <p>Chi crea la partita riceve un codice di quattro lettere da mandare all'altro.
+    Il draft si gioca per intero: le carte coperte che prendi non le vede nessuno.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <button class="btn" id="crea">Crea una partita</button>
+    </div>
+    <h2>Oppure entra in una partita</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <input id="cod" maxlength="4" placeholder="CODICE" autocomplete="off"
+        style="font-family:inherit;font-size:20px;letter-spacing:.3em;text-transform:uppercase;
+        width:150px;padding:9px 12px;border-radius:5px;border:1px solid #4a6b52;
+        background:rgba(0,0,0,.25);color:var(--oro2);text-align:center">
+      <button class="btn ghost" id="entra">Entra</button>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn ghost" id="torna">Torna indietro</button>
+    </div>`;
+  $('crea').onclick=()=>collega(codiceACaso());
+  $('entra').onclick=()=>{const c=$('cod').value.trim();
+    if(c.length>=4)collega(c);else $('cod').focus();};
+  $('cod').onkeydown=e=>{if(e.key==='Enter')$('entra').click();};
+  $('torna').onclick=schermataIniziale;
+}
+
+/** Se l'indirizzo contiene un codice, ci si collega da soli. */
+function daIndirizzo(){
+  const h=location.hash.replace(/^#/,'');
+  if(!h)return false;
+  const p=new URLSearchParams(h);
+  const c=p.get('c'); if(!c)return false;
+  collega(c,p.get('t')||null);
+  return true;
 }
 
 function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
   selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;
-  $('log').innerHTML='';
+  $('avviso').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
   scrivi(G.primoDraft===ME?'Sei stato tu l\'ultimo a viaggiare su una carovana: apri il draft e la prima giostra.'
@@ -712,7 +829,7 @@ function schermataDraft(){
   ov.hidden=false;
   const attesa = G.turno===BOT;
   disegnaDraft(attesa);
-  if(attesa) setTimeout(mossaDraftBot,520);
+  if(attesa && !RETE) setTimeout(mossaDraftBot,520);
 }
 
 function mossaDraftBot(){
@@ -747,10 +864,11 @@ function disegnaDraft(attesa){
     else if(!attesa) e.onclick=()=>{
       // il pannello può restare a schermo dopo un cambio di stato: verifico sempre
       if(G.fase!=='draft'||G.turno!==ME||sl.presa!==null)return;
+      if(RETE) return inviaAzione({t:'draft',i});
       const era=sl.coperta;
       ultimaScelta={gruppo:G.gruppoIdx,i};
       prendiInDraft(G,ME,i);
-      scrivi(`Prendi ${era?'una coperta: era ':''}${nomeCarta(sl.c)}.`,'me');
+      scrivi(era?'Prendi una carta coperta.':`Prendi <b>${nomeCarta(sl.c)}</b>.`,'me');
       schermataDraft();
     };
     else e.style.cursor='default';
@@ -766,7 +884,7 @@ function partiGiostra(){
   iniziaGiostra(G);
   ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
   $('app').hidden=false;
-  scrivi(`— GIOSTRA ${G.giostra} — Castello di ${NOME_SEME[G.assoCorrente.s]}, `+
+  scrivi(`<b>Giostra ${G.giostra}</b> — Castello di ${NOME_SEME[G.assoCorrente.s]}, `+
     `il Castello vicino è ${NOME_SEME[G.assoNemico.s]}.`,'sys');
   faseConta();
 }
@@ -784,7 +902,7 @@ function faseConta(){
 
 function nomiSlot(){
   // colonne della griglia: 0..4. Gli assi stanno in 1,2,3.
-  const iC=G.mappa.indexOf(G.assoCorrente), iN=G.mappa.indexOf(G.assoNemico);
+  const iC=G.iC, iN=G.iN;
   const colC=iC+1, colN=iN+1;
   const colE=colN>colC?colC-1:colC+1;   // equipaggiamento dal lato opposto ai giullari
   return{colC,colN,colE,iC,iN};
@@ -809,15 +927,17 @@ function adatta(){
   // il semicampo è alto quanto la pila più lunga: Cavaliere+Scudiero sono 1.5 carte
   const maxG=Math.max(1,G.v[0].campo.giullari.length,G.v[1].campo.giullari.length);
   const altLato=Math.max(1.5, 1+(maxG-1)*0.26);
-  const perAltezza=(c.clientHeight-110)/(2*altLato+1.15);
+  const perAltezza=(c.clientHeight-150)/(2*altLato+1.15);
   const perLarghezza=(c.clientWidth-2*106-2*26-40)/5/0.524;
+  // la riga di avviso occupa spazio sotto al tavolo
+  
   const ch=Math.max(54,Math.min(210,Math.floor(Math.min(perAltezza,perLarghezza))));
   R.setProperty('--ch',ch+'px');
 
   // la mano è sempre tarata su cinque carte in fila; da sei in su si accavallano
   const n=Math.max(1,G.v[ME].mano.length);
   const wDisp=Math.max(120,z.clientWidth-30);
-  const hDisp=Math.max(90,s.clientHeight*0.42-78);
+  const hDisp=Math.max(90,s.clientHeight*0.62-92);
   let cwm=Math.floor(Math.min((wDisp-32)/5, hDisp/1.905));
   cwm=Math.max(40,Math.min(cwm,160));
   R.setProperty('--cwm',cwm+'px');
@@ -865,11 +985,11 @@ function disegna(){
   /* --- riga 2: la Mappa del Regno --- */
   for(let idx=0;idx<3;idx++){
     const a=G.mappa[idx];
-    const attivo = a===G.assoCorrente||a===G.assoNemico;
+    const attivo = idx===G.iC||idx===G.iN;
     const box=el('div','assoBox');
     box.appendChild(cardEl(a,{coperta:!attivo,ace:attivo}));
-    const t = a===G.assoCorrente?['corr','Corrente']
-      : a===G.assoNemico?['nem','Nemico'] : ['off','Lontano'];
+    const t = idx===G.iC?['corr','Corrente']
+      : idx===G.iN?['nem','Nemico'] : ['off','Lontano'];
     box.appendChild(el('span','tag '+t[0],t[1]));
     put(2,idx+1,box);
   }
@@ -941,6 +1061,7 @@ function disegnaMano(){
     const b=el('button','btn','Conferma la Conta');
     b.disabled = scartiConta.length!==Math.max(0,da);
     b.onclick=()=>{
+      if(RETE){ inviaAzione({t:'conta',ids:scartiConta}); scartiConta=[]; return; }
       conta(G,ME,scartiConta);
       if(scartiConta.length)scrivi(`Alla Conta scarti ${scartiConta.length} carta/e.`,'me');
       scartiConta=[];disegna();
@@ -986,7 +1107,9 @@ function disegnaMano(){
   if(mioTurno){
     const p=el('button','btn ghost','Passa');
     p.onclick=()=>{
-      selId=null;passa(G,ME);
+      selId=null;
+      if(RETE) return inviaAzione({t:'passa'});
+      passa(G,ME);
       scrivi('Passi. Non giocherai più carte in questa giostra.','me');
       dopoMossa();
     };
@@ -1000,27 +1123,29 @@ function disegnaMano(){
 }
 
 function giocaIo(id,ruolo){
+  if(RETE){ selId=null; inviaAzione({t:'gioca',id,ruolo}); return; }
   const c=G.v[ME].mano.find(x=>x.id===id);
   const ev=gioca(G,ME,id,ruolo);
   selId=null;
   if(G.attesa&&G.attesa.p===ME){          // La Staffetta: decidi tu
-    scrivi(`Giochi ${nomeCarta(c)}.`,'me');
+    scrivi(`Giochi <b>${nomeCarta(c)}</b>. Ora scegli l'effetto della Staffetta.`,'me');
     inScarto=false;disegna();return;
   }
-  let t=`Giochi ${nomeCarta(c)} come ${NOME_RUOLO[ruolo]}.`;
-  if(ev.pescata)t+=' La Staffetta ti fa pescare una carta.';
-  if(c.v===8&&!ev.pescata&&ruolo==='giullare')t+=' Carovana vuota: niente pesca.';
-  if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero del bot: era ${nomeCarta(ev.eliminato)}.`;
+  let t = ruolo==='giullare'
+    ? `Giochi <b>${nomeCarta(c)}</b>.`
+    : `Schieri una carta coperta come <b>${NOME_RUOLO[ruolo]}</b>.`;
+  if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero del bot: era <b>${nomeCarta(ev.eliminato)}</b>.`;
   if(c.v===9&&!ev.eliminato&&ruolo==='giullare')t+=' Nessuno Scudiero da eliminare: colpo a vuoto.';
   scrivi(t,'me');
   dopoMossa();
 }
 
 function risolviMia(scelta){
+  if(RETE){ inScarto=false; inviaAzione({t:'staffetta',scelta}); return; }
   const ev=risolviStaffetta(G,scelta);
   inScarto=false;
-  if(ev.pescata)scrivi(`La Staffetta ti fa pescare: ${nomeCarta(ev.pescata)}.`,'me');
-  else if(ev.scartata)scrivi(`Con la Staffetta scarti ${nomeCarta(ev.scartata)}.`,'me');
+  if(ev.pescata)scrivi('La Staffetta ti fa pescare una carta.','me');
+  else if(ev.scartata)scrivi('Con la Staffetta scarti una carta dalla mano.','me');
   else scrivi('La Staffetta resta in campo senza effetto.','me');
   dopoMossa();
 }
@@ -1041,8 +1166,8 @@ function turnoBot(){
     const c=G.v[BOT].mano.find(x=>x.id===m.id);
     const ev=gioca(G,BOT,m.id,m.ruolo);
     let t = m.ruolo==='giullare'
-      ? `Il bot gioca ${nomeCarta(c)}.`
-      : `Il bot schiera una carta coperta come ${NOME_RUOLO[m.ruolo]}.`;
+      ? `Il bot gioca <b>${nomeCarta(c)}</b>.`
+      : `Il bot schiera una carta coperta come <b>${NOME_RUOLO[m.ruolo]}</b>.`;
     if(G.attesa&&G.attesa.p===BOT){
       const sc=sceltaStaffettaBot(G,BOT,LIV);
       const e2=risolviStaffetta(G,sc);
@@ -1050,7 +1175,7 @@ function turnoBot(){
       else if(e2.scartata)t+=' Con la Staffetta scarta una carta dalla mano.';
       else t+=' La Staffetta resta in campo senza effetto.';
     }
-    if(ev.eliminato)t+=` Il Guastafeste elimina il tuo Scudiero: era ${nomeCarta(ev.eliminato)}.`;
+    if(ev.eliminato)t+=` Il Guastafeste elimina il tuo Scudiero: era <b>${nomeCarta(ev.eliminato)}</b>.`;
     if(c.v===9&&!ev.eliminato&&m.ruolo==='giullare')t+=' Ma non c\'era nessuno Scudiero da eliminare.';
     scrivi(t,'bot');
   }
@@ -1065,9 +1190,9 @@ function riga(et,a,b,vinc,nota){
   return `<tr><td>${et}${nota?`<br><small style="opacity:.55">${nota}</small>`:''}</td>
     <td class="n${w(1)}">${b}</td><td class="n${w(0)}">${a}</td></tr>`;
 }
-function mostraApplausi(){
-  if(G.fase!=='applausi')return;   // già calcolata: non sommare due volte
-  const R=applausi(G);
+function mostraApplausi(Rin){
+  if(!Rin&&G.fase!=='applausi')return;   // già calcolata: non sommare due volte
+  const R=Rin||applausi(G);
   const A=G.v[ME],B=G.v[BOT],ac=G.assoCorrente,an=G.assoNemico;
   disegna();
   const fmtS=v=>v?`${v.base}${v.bonus?` +${v.bonus}`:''} = <b>${v.tot}</b>`:'—';
@@ -1121,6 +1246,9 @@ function mostraApplausi(){
   scrivi(`Applausi della giostra ${G.giostra}: tu ${R.pf[0]>=0?'+':''}${R.pf[0]}, `+
     `bot ${R.pf[1]>=0?'+':''}${R.pf[1]}. Totali ${A.pf} a ${B.pf}.`,'sys');
   $('avanti').onclick=()=>{
+    if(RETE){ $('avanti').disabled=true;
+      $('avanti').textContent='In attesa dell\'altro…';
+      return inviaAzione({t:'avanti'}); }
     if(G.giostra<3){chiudiGiostra(G);ov.hidden=true;partiGiostra();}
     else fineViaggio();
   };
@@ -1142,11 +1270,13 @@ function fineViaggio(){
       <button class="btn ghost" id="ancora">Un altro viaggio</button>
       <button class="btn" id="nuovo">Cambia impostazioni</button>
     </div>`;
-  $('ancora').onclick=()=>{ov.hidden=true;avvia();};
+  $('ancora').onclick=()=>{
+    if(RETE){try{RETE.ws.close()}catch(e){};RETE=null;location.hash='';}
+    ov.hidden=true;avvia();};
   $('nuovo').onclick=schermataIniziale;
 }
 
-schermataIniziale();
+if(!daIndirizzo()) schermataIniziale();
 </script>
 </body>
 </html>
