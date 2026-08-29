@@ -114,10 +114,12 @@ button{font-family:inherit;cursor:pointer;border:none}
 #mano .card+.card{margin-left:var(--sovrm,8px)}
 #mano .card:hover{transform:translateY(-8px);z-index:9}
 #mano .card.sel{transform:translateY(-11px);outline:3px solid var(--oro2);outline-offset:2px;z-index:9}
+#mano .card.sceglibile{outline:2px solid #e0473f;outline-offset:2px;cursor:pointer}
+#mano .card.sceglibile:hover{transform:translateY(-8px)}
 #mano .card.morta{filter:grayscale(.75) brightness(.6);cursor:not-allowed}
 #mano .card.morta:hover{transform:none}
-.azioni{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
-.hint{font-size:12px;opacity:.82;text-align:center;line-height:1.45;min-height:17px}
+.azioni{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%}
+.hint{font-size:12px;opacity:.82;text-align:center;line-height:1.45;min-height:17px;width:100%}
 
 /* ---------- LA CRONACA ---------- */
 #log{flex:1;min-height:0;overflow-y:auto;font-size:12px;line-height:1.6;
@@ -251,7 +253,7 @@ function nuovaPartita({seed=Date.now()&0xffff,primo=0,nomi=['Tu','Bot']}={}){
   const r=rng(seed), assi=mischia(SEMI.map(s=>carta(s,1)),r);
   return{rnd:r,mappa:assi.slice(0,3),assoScartato:assi[3],giostra:0,
     assoCorrente:null,assoNemico:null,v:[nuovoViandante(nomi[0]),nuovoViandante(nomi[1])],
-    primoDraft:primo,turno:primo,fase:'draft',log:[]};
+    primoDraft:primo,turno:primo,fase:'draft',attesa:null,log:[]};
 }
 function creaDraft(g){
   const m=mischia(mazzoCompleto(),g.rnd);g.gruppi=[];
@@ -280,6 +282,7 @@ function iniziaGiostra(g){
   g.giostra++;const i=g.giostra-1;
   g.assoCorrente=g.mappa[i];g.assoNemico=g.mappa[(i+1)%3];
   for(const v of g.v){v.campo=nuovoCampo();v.passato=false;}
+  g.attesa=null;
   for(const v of g.v)for(let k=0;k<5&&v.carovana.length;k++)v.mano.push(v.carovana.shift());
   g.turno=g.giostra%2===1?g.primoDraft:1-g.primoDraft;
   g.fase='conta';return g;
@@ -314,7 +317,7 @@ function passaTurno(g,p){
   if(bloccato(g,a)&&bloccato(g,p)){g.fase='applausi';return;}
   g.turno=bloccato(g,a)?p:a;
 }
-function gioca(g,p,id,ruolo){
+function gioca(g,p,id,ruolo,scelta){
   const v=g.v[p],av=g.v[1-p];
   if(g.fase!=='giostra')throw new Error('fase errata');
   if(g.turno!==p)throw new Error('non è il tuo turno');
@@ -329,11 +332,35 @@ function gioca(g,p,id,ruolo){
   else if(ruolo==='equipaggiamento')v.campo.equ=c;
   else{
     v.campo.giullari.push(c);
-    if(c.v===8&&v.carovana.length){ev.pescata=v.carovana.shift();v.mano.push(ev.pescata);}
     if(c.v===9&&av.campo.scu){ev.eliminato=av.campo.scu;av.scarti.push(av.campo.scu);av.campo.scu=null;}
+    if(c.v===8){
+      // LA STAFFETTA: pescare dalla Carovana oppure scartare una carta dalla mano
+      if(scelta){ applicaStaffetta(g,p,scelta,ev); }
+      else if(v.mano.length){ g.attesa={p,ev}; return ev; }   // c'è una scelta da fare
+      else if(v.carovana.length){ applicaStaffetta(g,p,{tipo:'pesca'},ev); }
+    }
   }
   passaTurno(g,p);return ev;
 }
+/** Risolve la scelta della Staffetta: 'pesca', 'scarta' (con id) o 'niente'. */
+function applicaStaffetta(g,p,scelta,ev){
+  const v=g.v[p];
+  if(scelta.tipo==='scarta'){
+    const k=v.mano.findIndex(c=>c.id===scelta.id);
+    if(k>=0){ev.scartata=v.mano.splice(k,1)[0];v.scarti.push(ev.scartata);}
+  } else if(scelta.tipo==='pesca'&&v.carovana.length){
+    ev.pescata=v.carovana.shift();v.mano.push(ev.pescata);
+  }
+  return ev;
+}
+function risolviStaffetta(g,scelta){
+  if(!g.attesa)return null;
+  const {p,ev}=g.attesa; g.attesa=null;
+  applicaStaffetta(g,p,scelta,ev);
+  passaTurno(g,p);
+  return ev;
+}
+
 function passa(g,p){
   if(g.turno!==p)throw new Error('non è il tuo turno');
   g.v[p].passato=true;passaTurno(g,p);return g;
@@ -497,6 +524,11 @@ function botMossa(g,livello){
         if(v.carovana.length===0)s-=2.2;
         if(c.s===an.s)s+=1.5;
         if(mano.some(x=>x.v===10)||v.campo.giullari.some(x=>x.v===10))s+=1.4*W.combo;
+        // la Staffetta è anche una valvola: se c'è da ripulire si usa subito,
+        // altrimenti conviene tenerne una di riserva
+        const morte=mano.filter(x=>!isGiullare(x)&&!ruoliPossibili(v.campo,x).length).length;
+        if(morte)s+=3.2*W.combo;
+        else if(!ultimo)s-=2.0*W.combo;
         return s;
       }
       // il 9
@@ -555,6 +587,31 @@ function botMossa(g,livello){
   return best;
 }
 
+/** La scelta della Staffetta per il bot: pescare o scartare, mai nessuna delle due. */
+function sceltaStaffettaBot(g,p,livello){
+  const W=PROFILI[livello]||PROFILI.normale;
+  const v=g.v[p], ultimo=g.giostra===3, ac=g.assoCorrente, an=g.assoNemico;
+  if(!v.mano.length) return {tipo:'pesca'};
+  const peso=c=>{
+    if(c.v===10)return 30; if(c.v===8)return 26; if(c.v===9)return 22;
+    if(!ruoliPossibili(v.campo,c).length)return -99;     // non ha più uno slot dove andare
+    let x=5-Math.abs(BERSAGLIO-(c.v+(c.s===ac.s?1:0)))*0.5;
+    if(c.s===ac.s)x+=2; if(c.s===an.s)x+=0.4; return x;
+  };
+  const peggiore=v.mano.slice().sort((x,y)=>peso(x)-peso(y))[0];
+  if(!v.carovana.length) return {tipo:'scarta',id:peggiore.id};   // obbligato
+  if(W.combo<0.3) return {tipo:'pesca'};                          // il principiante pesca e basta
+  if(peso(peggiore)===-99) return {tipo:'scarta',id:peggiore.id};
+  const basse=v.mano.filter(c=>!isGiullare(c));
+  const residui=(!v.campo.cav?1:0)+(!v.campo.scu?1:0)+(!v.campo.equ?1:0);
+  const soglia=ultimo?residui:residui+1;                          // una la posso riportare
+  if(basse.length>soglia){
+    const pb=basse.slice().sort((x,y)=>peso(x)-peso(y))[0];
+    if(pb)return {tipo:'scarta',id:pb.id};
+  }
+  return {tipo:'pesca'};
+}
+
 /** LA CONTA del bot: scarta le carte meno utili. */
 function botConta(g,livello){
   const W=PROFILI[livello]||PROFILI.normale;
@@ -576,7 +633,7 @@ function botConta(g,livello){
 /* ==========================================================================
    3. INTERFACCIA
    ========================================================================== */
-let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[], ultimaScelta=null;
+let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[], ultimaScelta=null, inScarto=false;
 const $=id=>document.getElementById(id);
 const ov=$('ov'), panel=$('panel');
 
@@ -629,7 +686,7 @@ function schermataIniziale(){
 function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
-  selId=null;scartiConta=[];ultimaScelta=null;
+  selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;
   $('log').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
@@ -774,7 +831,8 @@ function disegna(){
   adatta();
   const b=$('board');b.innerHTML='';
   const{colC,colN,colE}=nomiSlot();
-  const mioTurno = G.fase==='giostra'&&G.turno===ME&&!G.v[ME].passato;
+  const attesaMia = !!(G.attesa&&G.attesa.p===ME);
+  const mioTurno = G.fase==='giostra'&&G.turno===ME&&!G.v[ME].passato&&!attesaMia;
   const fine = G.fase==='applausi'||G.fase==='intergiostra'||G.fase==='fine';
   const campoBot=G.v[BOT].campo, campoMe=G.v[ME].campo;
 
@@ -843,12 +901,18 @@ function disegnaMano(){
   const az=$('azioni');az.innerHTML='';
   const v=G.v[ME];
   const inConta = G.fase==='conta';
-  const mioTurno = G.fase==='giostra'&&G.turno===ME&&!v.passato;
+  const attesaMia = !!(G.attesa&&G.attesa.p===ME);
+  const mioTurno = G.fase==='giostra'&&G.turno===ME&&!v.passato&&!attesaMia;
 
   v.mano.forEach(c=>{
     const e=cardEl(c);
     const ruoli=ruoliPossibili(v.campo,c);
-    if(inConta){
+    if(attesaMia&&(inScarto||!v.carovana.length)){
+      e.classList.add('sceglibile');
+      e.onclick=()=>risolviMia({tipo:'scarta',id:c.id});
+    } else if(attesaMia){
+      e.classList.add('morta');
+    } else if(inConta){
       if(scartiConta.includes(c.id))e.classList.add('sel');
       e.onclick=()=>{
         const i=scartiConta.indexOf(c.id);
@@ -886,6 +950,29 @@ function disegnaMano(){
     return;
   }
 
+  if(attesaMia){
+    const deveScartare = !v.carovana.length;      // non potendo pescare, lo scarto è obbligato
+    if(inScarto||deveScartare){
+      $('hint').textContent = deveScartare
+        ? 'La Carovana è vuota: la Staffetta ti obbliga a scartare. Scegli quale carta.'
+        : 'La Staffetta: scegli quale carta scartare.';
+      if(!deveScartare){
+        const a=el('button','btn ghost','Torna indietro');
+        a.onclick=()=>{inScarto=false;disegna();};
+        az.appendChild(a);
+      }
+    } else {
+      $('hint').textContent='La Staffetta: pesca dalla Carovana, oppure scarta una carta dalla mano.';
+      const b1=el('button','btn',`Pesca · ${v.carovana.length}`);
+      b1.onclick=()=>risolviMia({tipo:'pesca'});
+      az.appendChild(b1);
+      const b2=el('button','btn ghost','Scarta una carta');
+      b2.onclick=()=>{inScarto=true;disegna();};
+      az.appendChild(b2);
+    }
+    return;
+  }
+
   if(G.fase!=='giostra'){$('hint').textContent='';return;}
 
   if(v.passato){$('hint').textContent='Hai passato. Il bot completa la giostra.';}
@@ -916,12 +1003,25 @@ function giocaIo(id,ruolo){
   const c=G.v[ME].mano.find(x=>x.id===id);
   const ev=gioca(G,ME,id,ruolo);
   selId=null;
+  if(G.attesa&&G.attesa.p===ME){          // La Staffetta: decidi tu
+    scrivi(`Giochi ${nomeCarta(c)}.`,'me');
+    inScarto=false;disegna();return;
+  }
   let t=`Giochi ${nomeCarta(c)} come ${NOME_RUOLO[ruolo]}.`;
   if(ev.pescata)t+=' La Staffetta ti fa pescare una carta.';
   if(c.v===8&&!ev.pescata&&ruolo==='giullare')t+=' Carovana vuota: niente pesca.';
   if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero del bot: era ${nomeCarta(ev.eliminato)}.`;
   if(c.v===9&&!ev.eliminato&&ruolo==='giullare')t+=' Nessuno Scudiero da eliminare: colpo a vuoto.';
   scrivi(t,'me');
+  dopoMossa();
+}
+
+function risolviMia(scelta){
+  const ev=risolviStaffetta(G,scelta);
+  inScarto=false;
+  if(ev.pescata)scrivi(`La Staffetta ti fa pescare: ${nomeCarta(ev.pescata)}.`,'me');
+  else if(ev.scartata)scrivi(`Con la Staffetta scarti ${nomeCarta(ev.scartata)}.`,'me');
+  else scrivi('La Staffetta resta in campo senza effetto.','me');
   dopoMossa();
 }
 
@@ -943,8 +1043,13 @@ function turnoBot(){
     let t = m.ruolo==='giullare'
       ? `Il bot gioca ${nomeCarta(c)}.`
       : `Il bot schiera una carta coperta come ${NOME_RUOLO[m.ruolo]}.`;
-    if(ev.pescata)t+=' La Staffetta gli fa pescare.';
-    if(c.v===8&&!ev.pescata&&m.ruolo==='giullare')t+=' Carovana vuota: niente pesca.';
+    if(G.attesa&&G.attesa.p===BOT){
+      const sc=sceltaStaffettaBot(G,BOT,LIV);
+      const e2=risolviStaffetta(G,sc);
+      if(e2.pescata)t+=' La Staffetta gli fa pescare una carta.';
+      else if(e2.scartata)t+=' Con la Staffetta scarta una carta dalla mano.';
+      else t+=' La Staffetta resta in campo senza effetto.';
+    }
     if(ev.eliminato)t+=` Il Guastafeste elimina il tuo Scudiero: era ${nomeCarta(ev.eliminato)}.`;
     if(c.v===9&&!ev.eliminato&&m.ruolo==='giullare')t+=' Ma non c\'era nessuno Scudiero da eliminare.';
     scrivi(t,'bot');
