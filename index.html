@@ -186,6 +186,10 @@ button{font-family:inherit;cursor:pointer;border:none}
 #draftGrid .card{cursor:pointer;transition:.13s}
 #draftGrid .card:hover{transform:translateY(-9px);box-shadow:0 12px 22px rgba(0,0,0,.5)}
 #draftGrid .card.presa{opacity:.14;pointer-events:none;transform:scale(.9)}
+#draftGrid .cornice{border-radius:8px;padding:3px;line-height:0;transition:.13s}
+#draftGrid .cornice.ultima{outline:2px solid #e0473f;outline-offset:-1px;
+  background:rgba(224,71,63,.10)}
+#draftGrid .cornice.ultima .card.presa{opacity:.40}
 .presi{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:6px}
 .barra{display:flex;gap:5px;justify-content:center;margin-bottom:6px}
 .barra i{width:26px;height:4px;border-radius:2px;background:rgba(240,212,136,.2)}
@@ -264,7 +268,7 @@ function prendiInDraft(g,p,i){
   if(!gr)throw new Error('gruppo di draft non valido');
   const sl=gr[i];
   if(!sl||sl.presa!==null)throw new Error('carta non disponibile');
-  sl.presa=p;sl.coperta=false;g.v[p].carovana.push(sl.c);
+  sl.presa=p;g.v[p].carovana.push(sl.c);   // se era coperta resta coperta
   if(gr.every(s=>s.presa!==null)){
     g.gruppoIdx++;
     if(g.gruppoIdx>=6){for(const v of g.v)v.carovana=mischia(v.carovana,g.rnd);g.fase='pronti';}
@@ -572,7 +576,7 @@ function botConta(g,livello){
 /* ==========================================================================
    3. INTERFACCIA
    ========================================================================== */
-let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[];
+let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[], ultimaScelta=null;
 const $=id=>document.getElementById(id);
 const ov=$('ov'), panel=$('panel');
 
@@ -625,7 +629,7 @@ function schermataIniziale(){
 function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
-  selId=null;scartiConta=[];
+  selId=null;scartiConta=[];ultimaScelta=null;
   $('log').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
@@ -659,8 +663,9 @@ function mossaDraftBot(){
   const i=botDraft(G,LIV);
   if(i<0)return;
   const sl=G.gruppi[G.gruppoIdx][i], era=sl.coperta;
+  ultimaScelta={gruppo:G.gruppoIdx,i};
   prendiInDraft(G,BOT,i);
-  scrivi(`Il bot prende ${era?'una carta coperta — è ':''}${nomeCarta(sl.c)}.`,'bot');
+  scrivi(era?'Il bot prende una carta coperta.':`Il bot prende ${nomeCarta(sl.c)}.`,'bot');
   schermataDraft();
 }
 
@@ -678,18 +683,21 @@ function disegnaDraft(attesa){
   const grid=$('draftGrid');
   if(attesa)grid.style.opacity='.55';
   gr.forEach((sl,i)=>{
-    const e=cardEl(sl.c,{coperta:sl.coperta&&sl.presa===null});
+    const box=el('div','cornice');
+    if(ultimaScelta&&ultimaScelta.gruppo===n&&ultimaScelta.i===i)box.classList.add('ultima');
+    const e=cardEl(sl.c,{coperta:sl.coperta});   // le coperte restano coperte per sempre
     if(sl.presa!==null)e.classList.add('presa');
     else if(!attesa) e.onclick=()=>{
       // il pannello può restare a schermo dopo un cambio di stato: verifico sempre
       if(G.fase!=='draft'||G.turno!==ME||sl.presa!==null)return;
       const era=sl.coperta;
+      ultimaScelta={gruppo:G.gruppoIdx,i};
       prendiInDraft(G,ME,i);
-      scrivi(`Prendi ${era?'una coperta — è ':''}${nomeCarta(sl.c)}.`,'me');
+      scrivi(`Prendi ${era?'una coperta: era ':''}${nomeCarta(sl.c)}.`,'me');
       schermataDraft();
     };
     else e.style.cursor='default';
-    grid.appendChild(e);
+    box.appendChild(e);grid.appendChild(box);
   });
   const pr=$('presi');
   G.v[ME].carovana.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s))
