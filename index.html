@@ -272,7 +272,17 @@ const SEMI=['D','S','C','B'];
 const NOME_SEME={D:'Denari',S:'Spade',C:'Coppe',B:'Bastoni'};
 const NOME_GIU={8:'La Staffetta',9:'Il Guastafeste',10:'Il Capocomico'};
 const NOME_RUOLO={cavaliere:'Cavaliere',scudiero:'Scudiero',equipaggiamento:'Equipaggiamento',giullare:'Giullare'};
-const PF_SCU=4, PF_CAV=6, BERSAGLIO=8;
+const PF_SCU=4, PF_CAV=6, BERSAGLIO=8, PESCA=5, TETTO=6;
+
+/* L'etichetta del pacchetto di regole in corso. Va cambiata ogni volta che
+   si tocca una regola: l'archivio raggruppa le partite per etichetta e i
+   pacchetti vecchi restano dove sono, intatti. */
+const REGOLE='A';
+const NOTE_REGOLE='Staffetta con scelta fra pescare e scartare · Capocomico solo sugli altri Giullari · nessun tetto al Guastafeste';
+function improntaRegole(){
+  return {v:REGOLE, scu:PF_SCU, cav:PF_CAV, bersaglio:BERSAGLIO,
+          pesca:PESCA, tetto:TETTO, note:NOTE_REGOLE};
+}
 const carta=(s,v)=>({s,v,id:s+v});
 const isGiullare=c=>c.v>=8;
 const nomeCarta=c=>(c.v>=8?NOME_GIU[c.v]:c.v)+' di '+NOME_SEME[c.s];
@@ -329,7 +339,7 @@ function iniziaGiostra(g){
   g.assoCorrente=g.mappa[g.iC];g.assoNemico=g.mappa[g.iN];
   for(const v of g.v){v.campo=nuovoCampo();v.passato=false;}
   g.attesa=null;
-  for(const v of g.v)for(let k=0;k<5&&v.carovana.length;k++)v.mano.push(v.carovana.shift());
+  for(const v of g.v)for(let k=0;k<PESCA&&v.carovana.length;k++)v.mano.push(v.carovana.shift());
   g.turno=g.giostra%2===1?g.primoDraft:1-g.primoDraft;
   g.fase='conta';return g;
 }
@@ -337,7 +347,7 @@ function conta(g,p,ids=[]){
   const v=g.v[p];
   for(const id of ids){const k=v.mano.findIndex(c=>c.id===id);
     if(k<0)throw new Error('carta non in mano');v.scarti.push(v.mano.splice(k,1)[0]);}
-  if(v.mano.length>6)throw new Error('devi scendere a 6 carte');
+  if(v.mano.length>TETTO)throw new Error('devi scendere a 6 carte');
   v.contaFatta=true;
   if(g.v.every(x=>x.contaFatta)){g.v.forEach(x=>x.contaFatta=false);g.fase='giostra';}
   return g;
@@ -669,7 +679,7 @@ function sceltaStaffettaBot(g,p,livello){
 function botConta(g,livello){
   const W=PROFILI[livello]||PROFILI.cavaliere;
   const v=g.v[BOT],ac=g.assoCorrente,an=g.assoNemico;
-  const extra=v.mano.length-6;
+  const extra=v.mano.length-TETTO;
   if(extra<=0)return[];
   const peso=c=>{
     if(c.v===10)return 20+v.mano.filter(isGiullare).length*W.combo;
@@ -704,14 +714,15 @@ function codiceACaso(){
   const L='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:4},()=>L[Math.floor(Math.random()*L.length)]).join('');
 }
-function collega(codice,token){
+function collega(codice,token,nome){
   $('abbandona').hidden=false;$('abbandona').onclick=chiediUscita;
   codice=codice.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const url=SERVER.replace(/^http/,'ws')+'/ws?codice='+encodeURIComponent(codice)
-    +(token?'&token='+encodeURIComponent(token):'');
+    +(token?'&token='+encodeURIComponent(token):'')
+    +'&nome='+encodeURIComponent((nome||'').trim().slice(0,20));
   let ws;
   try{ ws=new WebSocket(url); }catch(e){ return salaErrore('Indirizzo del server non valido.'); }
-  RETE={ws,codice,token:token||null,p:null};
+  RETE={ws,codice,token:token||null,p:null,nome:(nome||'').trim().slice(0,20)};
   G=null;
   salaAttesa(codice,'Collegamento in corso…');
   ws.onopen=()=>salaAttesa(codice,'In attesa dell\'altro viandante…');
@@ -719,7 +730,7 @@ function collega(codice,token){
     let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
     if(m.t==='posto'){
       RETE.p=m.p; RETE.token=m.token;
-      location.hash='c='+codice+'&t='+m.token;      // così ricaricando rientri
+      location.hash='c='+codice+'&t='+m.token+'&n='+encodeURIComponent(RETE.nome||'');
     }
     else if(m.t==='attesa') salaAttesa(codice,'In attesa dell\'altro viandante…');
     else if(m.t==='stato')  mostraStato(m.v,m.R,m.collegati);
@@ -760,7 +771,7 @@ function mostraStato(v,R,collegati){
   if(G.fase==='intergiostra'||G.fase==='fine'){ disegna(); return mostraApplausi(R); }
   ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
   // la Conta senza scarti si conferma da sola
-  if(G.fase==='conta'&&!G.v[ME].contaFatta&&G.v[ME].mano.length<=6) inviaAzione({t:'conta',ids:[]});
+  if(G.fase==='conta'&&!G.v[ME].contaFatta&&G.v[ME].mano.length<=TETTO) inviaAzione({t:'conta',ids:[]});
   disegna();
   if(collegati<2) scrivi('L\'altro viandante si è disconnesso: aspetto che rientri.','sys');
 }
@@ -840,6 +851,13 @@ function schermataRete(){
     <div class="sub">una partita, due browser</div>
     <p>Chi crea la partita riceve un codice di quattro lettere da mandare all'altro.
     Il draft si gioca per intero: le carte coperte che prendi non le vede nessuno.</p>
+    <div style="margin-bottom:18px">
+      <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:6px">Il tuo nome</div>
+      <input id="nome" maxlength="20" placeholder="come ti chiami" autocomplete="off"
+        style="font-family:inherit;font-size:16px;width:230px;padding:9px 12px;border-radius:5px;
+        border:1px solid #4a6b52;background:rgba(0,0,0,.25);color:var(--crema)">
+      <div style="font-size:12px;opacity:.55;margin-top:6px">Serve per la classifica. Se lo lasci vuoto sarai Anonimo.</div>
+    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       <button class="btn" id="crea">Crea una partita</button>
     </div>
@@ -854,9 +872,9 @@ function schermataRete(){
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button class="btn ghost" id="torna">Torna indietro</button>
     </div>`;
-  $('crea').onclick=()=>collega(codiceACaso());
+  $('crea').onclick=()=>collega(codiceACaso(),null,$('nome').value);
   $('entra').onclick=()=>{const c=$('cod').value.trim();
-    if(c.length>=4)collega(c);else $('cod').focus();};
+    if(c.length>=4)collega(c,null,$('nome').value);else $('cod').focus();};
   $('cod').onkeydown=e=>{if(e.key==='Enter')$('entra').click();};
   $('torna').onclick=schermataIniziale;
 }
@@ -867,7 +885,7 @@ function daIndirizzo(){
   if(!h)return false;
   const p=new URLSearchParams(h);
   const c=p.get('c'); if(!c)return false;
-  collega(c,p.get('t')||null);
+  collega(c,p.get('t')||null,p.get('n')||'');
   return true;
 }
 
@@ -1039,7 +1057,7 @@ function faseConta(){
   scartiConta=[];
   // il bot fa la sua conta subito
   try{conta(G,BOT,botConta(G,LIV));}catch(e){}
-  if(G.v[ME].mano.length<=6){
+  if(G.v[ME].mano.length<=TETTO){
     conta(G,ME,[]);
     disegna();
     if(G.turno===BOT)setTimeout(turnoBot,700);
@@ -1149,7 +1167,7 @@ function archivia(){
   const tutte=i=>[...G.v[i].carovana,...G.v[i].mano,...G.v[i].scarti,
     ...[G.v[i].campo.cav,G.v[i].campo.scu,G.v[i].campo.equ].filter(Boolean),
     ...G.v[i].campo.giullari];
-  const res={v:1,tipo:'bot',draft:MODO,fine:Date.now(),
+  const res={v:1,tipo:'bot',regole:improntaRegole(),draft:MODO,fine:Date.now(),
     durata:Math.round((Date.now()-DIARIO.inizio)/1000),
     mappa:G.mappa.map(a=>a.s),
     viandanti:[ME,BOT].map(i=>{const t=tutte(i);
@@ -1301,7 +1319,7 @@ function disegnaMano(){
   });
 
   if(inConta){
-    const da=v.mano.length-6;
+    const da=v.mano.length-TETTO;
     $('hint').textContent=da>0
       ? `La Conta: devi scendere a 6 carte. Selezionane ${da-scartiConta.length>0?da-scartiConta.length:0} da scartare.`
       : 'La Conta: nessuno scarto necessario.';
