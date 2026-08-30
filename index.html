@@ -47,12 +47,23 @@ button{font-family:inherit;cursor:pointer;border:none}
   content:"";position:absolute;inset:6px;border:1px solid rgba(240,212,136,.55);border-radius:3px;
 }
 .card.sm{--ch:64px;--cw:34px;width:34px;height:64px}
-.card.med{--ch:92px;--cw:48px;width:48px;height:92px}
-.draftDue{display:flex;gap:20px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.card.med{--ch:111px;--cw:58px;width:58px;height:111px}
+.draftTre{display:flex;gap:22px;align-items:center;justify-content:center;flex-wrap:wrap}
+.colMio{flex:none;display:flex;flex-direction:column;align-items:center;gap:10px;
+  border:1px solid rgba(240,212,136,.16);border-radius:10px;padding:12px 14px}
+.destra{display:flex;gap:34px;align-items:center;flex:none}
+.filaEt.suo{width:calc(60px*3 + 5px*2);text-align:center}
+.colSuo{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;
+  border:1px solid rgba(240,212,136,.12);border-radius:10px;padding:12px}
 .miaCar{flex:none;display:flex;flex-direction:column;gap:9px;min-width:0}
-.filaCar{display:flex;gap:4px;flex-wrap:wrap;max-width:320px;min-height:92px;
+.filaCar{display:flex;gap:4px;flex-wrap:wrap;width:calc(58px*6 + 4px*5);min-height:111px;
   align-content:flex-start}
-.filaEt{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;margin-bottom:2px}
+.filaCar.tre{width:calc(60px*3 + 5px*2);min-height:0;gap:5px}
+.card.pic{--ch:115px;--cw:60px;width:60px;height:115px}
+.filaEt.vuota{visibility:hidden}
+.filaEt{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;margin-bottom:2px;
+  width:calc(58px*6 + 4px*5);height:13px;line-height:13px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .colDraft{flex:none;display:flex;flex-direction:column;align-items:center}
 .card.ace{box-shadow:0 0 0 2px var(--oro2),var(--ombra)}
 .card.spenta{filter:grayscale(.7) brightness(.5)}
@@ -143,7 +154,9 @@ button{font-family:inherit;cursor:pointer;border:none}
 /* ---------- OVERLAY ---------- */
 .ov{position:fixed;inset:0;background:rgba(10,16,12,.86);display:flex;align-items:center;
   justify-content:center;padding:20px;z-index:50;overflow-y:auto}
-.ov[hidden]{display:none}   /* l'attributo hidden da solo non basta: display:flex lo batte */
+.ov[hidden]{display:none}
+#ovScarti{z-index:60}
+#ovScarti .panel{max-width:min(900px,92vw)}   /* l'attributo hidden da solo non basta: display:flex lo batte */
 
 /* gli Applausi si spostano a sinistra e lasciano il tavolo in chiaro */
 .ov.laterale{justify-content:flex-start;padding-left:16px;
@@ -225,6 +238,7 @@ button{font-family:inherit;cursor:pointer;border:none}
       <div id="mano"></div>
       <div class="hint" id="hint"></div>
       <div class="azioni" id="azioni"></div>
+      <button class="btn ghost" id="vediScarti" hidden style="font-size:12px;padding:5px 12px"></button>
     </section>
     <section class="pannello" id="zonaLog">
       <div class="etichetta">Registro del viaggio</div>
@@ -239,6 +253,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 </div>
 
 <div class="ov" id="ov"><div class="panel" id="panel"></div></div>
+<div class="ov" id="ovScarti" hidden><div class="panel" id="panelScarti"></div></div>
 
 <script>
 /* ==========================================================================
@@ -270,7 +285,7 @@ function nuovaPartita({seed=Date.now()&0xffff,primo=0,nomi=['Tu','Bot']}={}){
 }
 function creaDraft(g){
   const m=mischia(mazzoCompleto(),g.rnd);
-  // 1. l'approdo: sei carte a testa, quattro scoperte e due coperte
+  // 1. il mucchio: sei carte a testa, quattro scoperte e due coperte
   g.iniziali=[[],[]];
   for(const p of [0,1]){
     const sei=m.splice(0,6);
@@ -446,27 +461,33 @@ const BOT=1, ME=0;
 const BASSE_NECESSARIE = 9;
 
 function valoreDraft(c,carovana,livello){
-  const W=PROFILI[livello]||PROFILI.normale;
-  if(!c) return 3.6;                       // coperta: conviene prenderne circa metà
+  const W=PROFILI[livello]||PROFILI.cavaliere;
+  if(!c) return 3.6;                              // coperta: se ne prende circa metà
   const basse=carovana.filter(x=>!isGiullare(x)).length;
   const giu=carovana.filter(isGiullare).length;
-  const nove=carovana.filter(x=>x.v===9).length;
-  // il principiante vede le figure come carte mediocri e insegue i numeri alti
-  const fig=base=>base*W.draft + 3.4*(1-W.draft);
 
-  if(c.v===10) return fig(10.5+Math.min(giu,5)*1.9);
-  if(c.v===8)  return fig(8.0);
-  if(c.v===9)  return fig(6.6-nove*1.6);
+  if(isGiullare(c)){
+    let s;
+    if(W.obiettivo){                              // il Cavaliere si ferma alla sua quota
+      const ho=carovana.filter(x=>x.v===c.v).length, voglio=W.obiettivo[c.v];
+      s = ho<voglio ? 9.5+(voglio-ho)*1.2 : 3.0;
+      if(giu>=6) s*=0.45;                         // sei figure gli bastano
+    } else {                                      // il Buffone ne vuole quante può
+      s = (W.pref[c.v]||1)*(7.5+Math.min(giu,6)*0.7);
+    }
+    return s*W.giu;
+  }
 
-  let v = 2.4 + (c.v===7?0.6:0) + c.v*0.22*(1-W.draft);
+  let v = 2.4 + (c.v===7?0.6:0);
   v += Math.min(carovana.filter(x=>x.s===c.s&&!isGiullare(x)).length,3)*0.5;   // blocchi di seme
   v += Math.min(carovana.filter(x=>!isGiullare(x)&&x.v+c.v===8).length,2)*0.7; // coppie che fanno 8
-  if(basse>=BASSE_NECESSARIE) v *= 1-0.55*W.draft;   // oltre le nove necessarie rendono poco
-  return v;
+  if(basse>=(W.obiettivo?12:9)) v*=0.45;          // oltre il necessario rendono poco
+  return v*W.duello;
 }
+
 function botDraft(g,livello){
   const gr=g.gruppi[g.gruppoIdx], car=g.v[BOT].carovana;
-  const rum=(PROFILI[livello]||PROFILI.normale).rumore*0.4;
+  const rum=(PROFILI[livello]||PROFILI.cavaliere).rumore*0.4;
   let best=-1,bs=-Infinity;
   gr.forEach((sl,i)=>{
     if(sl.presa!==null)return;
@@ -484,9 +505,10 @@ function botDraft(g,livello){
    mira   : quanto ottimizza il Cavaliere verso l'8
 ------------------------------------------------------------------------- */
 const PROFILI={
-  facile:   {attesa:0,   combo:0,   tempi:0,   mira:0.45, draft:0.28, rumore:2.6},
-  normale:  {attesa:0.45,combo:0.45,tempi:0.45,mira:0.75, draft:0.42, rumore:1.4},
-  difficile:{attesa:1,   combo:1,   tempi:1,   mira:1,    draft:1,    rumore:0}
+  // Un solo avversario: equilibrato. Punta a sei figure, due per tipo,
+  // e cerca di fare il meglio su tutti e tre i fronti.
+  cavaliere:{attesa:1,combo:1,tempi:1,mira:1, draft:1, rumore:0.9,
+             obiettivo:{8:2,9:2,10:2}, duello:1.05, giu:1.05}
 };
 function potenzialeGiullari(v){
   return v.campo.giullari.length + v.mano.filter(isGiullare).length;
@@ -509,7 +531,7 @@ function miglioreCavaliere(mano,ac){
 }
 
 function botMossa(g,livello){
-  const W=PROFILI[livello]||PROFILI.normale;
+  const W=PROFILI[livello]||PROFILI.cavaliere;
   const v=g.v[BOT],av=g.v[ME],ac=g.assoCorrente,an=g.assoNemico;
   const legali=mosseLegali(g,BOT);
   if(legali.length<=1)return{tipo:'passa'};
@@ -530,7 +552,7 @@ function botMossa(g,livello){
     }
     const c=mano.find(x=>x.id===m.id);
 
-    if(m.ruolo==='giullare'){
+    if(m.ruolo==='giullare'){ const _g=W.giu;
       if(c.v===10){
         const altri=potenzialeGiullari(v)-1;
         // senza "combo" il bot crede che un 10 valga sempre: lo cala e basta
@@ -551,7 +573,7 @@ function botMossa(g,livello){
         const morte=mano.filter(x=>!isGiullare(x)&&!ruoliPossibili(v.campo,x).length).length;
         if(morte)s+=3.2*W.combo;
         else if(!ultimo)s-=2.0*W.combo;
-        return s;
+        return s*_g;
       }
       // il 9
       let s;
@@ -564,10 +586,10 @@ function botMossa(g,livello){
         if(ultimo)s+=2.2;
       }
       if(v.campo.giullari.some(x=>x.v===10)||mano.some(x=>x.v===10))s+=1.2*W.combo;
-      return s;
+      return s*_g;
     }
 
-    if(m.ruolo==='cavaliere'){
+    if(m.ruolo==='cavaliere'){ const _d=W.duello;
       if(!piano)return 0;
       const b=c.s===ac.s?1:0, d=Math.abs(BERSAGLIO-(c.v+b));
       // senza "mira" il bot guarda il valore nudo invece della distanza dall'8
@@ -575,10 +597,10 @@ function botMossa(g,livello){
       if(piano.cav.id===c.id) s+=2.2*W.mira;
       if(piano.equ&&piano.cav.id===c.id) s+=1.1*W.mira;
       if(b) s+=1.3;
-      return s;
+      return s*_d;
     }
 
-    if(m.ruolo==='scudiero'){
+    if(m.ruolo==='scudiero'){ const _d=W.duello;
       // il cuore del gioco: aspettare che l'avversario non possa più giocare il 9
       const rischio = avvFinito ? 0 : (1+av.mano.length*0.85)*W.attesa;
       const val = c.v + (v.campo.cav&&v.campo.cav.s===c.s?2:0);
@@ -587,16 +609,16 @@ function botMossa(g,livello){
       if(!v.campo.cav&&piano&&piano.cav.id===c.id) s-=4*W.mira;
       if(avvFinito) s+=3.5*W.attesa;
       if(ultimo) s+=1.2;
-      return s;
+      return s*_d;
     }
 
-    if(m.ruolo==='equipaggiamento'){
+    if(m.ruolo==='equipaggiamento'){ const _d=W.duello;
       const cav=v.campo.cav,b=cav.s===ac.s?1:0;
       const prima=Math.abs(BERSAGLIO-(cav.v+b)), dopo=Math.abs(BERSAGLIO-(cav.v+b+c.v));
       let s = 3 + (prima-dopo)*2.6*W.mira;
       if(dopo===0)s+=3*W.mira;
       if(dopo>prima)s-=6*W.mira;
-      return s;
+      return s*_d;
     }
     return 0;
   };
@@ -611,7 +633,7 @@ function botMossa(g,livello){
 
 /** La scelta della Staffetta per il bot: pescare o scartare, mai nessuna delle due. */
 function sceltaStaffettaBot(g,p,livello){
-  const W=PROFILI[livello]||PROFILI.normale;
+  const W=PROFILI[livello]||PROFILI.cavaliere;
   const v=g.v[p], ultimo=g.giostra===3, ac=g.assoCorrente, an=g.assoNemico;
   if(!v.mano.length) return {tipo:'pesca'};
   const peso=c=>{
@@ -636,7 +658,7 @@ function sceltaStaffettaBot(g,p,livello){
 
 /** LA CONTA del bot: scarta le carte meno utili. */
 function botConta(g,livello){
-  const W=PROFILI[livello]||PROFILI.normale;
+  const W=PROFILI[livello]||PROFILI.cavaliere;
   const v=g.v[BOT],ac=g.assoCorrente,an=g.assoNemico;
   const extra=v.mano.length-6;
   if(extra<=0)return[];
@@ -657,7 +679,7 @@ function botConta(g,livello){
    ========================================================================== */
 const SERVER='https://giostre.claudio-dibiagio.workers.dev';
 let RETE=null;              // quando si gioca in due: {ws, codice, token, p}
-let G=null, LIV='normale', MODO='rapido', selId=null, scartiConta=[], ultimaScelta=null, inScarto=false;
+let G=null, LIV='cavaliere', MODO='completo', selId=null, scartiConta=[], ultimaScelta=null, inScarto=false;
 const $=id=>document.getElementById(id);
 const ov=$('ov'), panel=$('panel');
 
@@ -750,7 +772,7 @@ function scrivi(txt,cls){
   const l=$('log'); if(!l)return;
   const d=el('div',cls); d.innerHTML=txt; l.prepend(d);
 }
-function nomeAv(){ return RETE ? 'Viandante '+(2-RETE.p) : 'Bot'; }
+function nomeAv(){ return RETE ? 'Viandante '+(2-RETE.p) : 'Il Bot'; }
 function nomeMio(){ return RETE ? 'Viandante '+(RETE.p+1) : 'Tu'; }
 
 /** Una carta coperta che puoi girare cliccandoci sopra. Solo per le tue. */
@@ -782,24 +804,16 @@ function schermataIniziale(){
     </div>
     <h2>La Carovana</h2>
     <div class="opt" id="optModo">
-      <button data-v="completo">Draft completo<small>Sei gruppi da sei carte, scegli tu una a una. Fedele al regolamento.</small></button>
-      <button data-v="rapido" class="on">Draft rapido<small>Le carovane si formano da sole. Per andare dritti alle giostre.</small></button>
-    </div>
-    <h2>Il Bot</h2>
-    <div class="opt" id="optLiv">
-      <button data-v="facile">Viandante<small>Insegue le carte alte e sbaglia i tempi.</small></button>
-      <button data-v="normale" class="on">Cavaliere<small>Gioca bene, ogni tanto esita.</small></button>
-      <button data-v="difficile">Signora dell'Asso<small>Non sbaglia i tempi e caccia i Giullari.</small></button>
+      <button data-v="completo" class="on">Draft completo<small>Sei carte di mucchio, poi due mani da dodici: scegli tu una a una.</small></button>
+      <button data-v="rapido">Draft rapido<small>Le Carovane si formano da sole. Per andare dritti alle giostre.</small></button>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
       <button class="btn" id="via">Parti per il Regno</button>
     </div>`;
-  for(const[gid,set]of[['optModo',v=>MODO=v],['optLiv',v=>LIV=v]]){
-    $(gid).querySelectorAll('button').forEach(b=>b.onclick=()=>{
-      $(gid).querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-      b.classList.add('on');set(b.dataset.v);
-    });
-  }
+  $('optModo').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    $('optModo').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');MODO=b.dataset.v;
+  });
   $('via').onclick=avvia;
   $('vsBot').onclick=()=>{$('vsBot').classList.add('on');$('vsUmano').classList.remove('on');};
   $('vsUmano').onclick=schermataRete;
@@ -847,7 +861,7 @@ function daIndirizzo(){
 function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
-  selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;
+  selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;diarioNuovo();
   if($('avviso'))$('avviso').innerHTML='';if($('log'))$('log').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
@@ -855,7 +869,7 @@ function avvia(){
     :'Il bot è stato l\'ultimo a viaggiare su una carovana: apre lui il draft e la prima giostra.','sys');
   if(MODO==='rapido'){
     while(G.fase==='draft'){
-      const i = G.turno===BOT ? botDraft(G,LIV) : botDraft(G,'normale');
+      const i = botDraft(G, G.turno===BOT ? LIV : 'cavaliere');
       prendiInDraft(G,G.turno,i);
     }
     scrivi('Draft rapido: le due Carovane sono formate.','sys');
@@ -888,9 +902,9 @@ function mossaDraftBot(){
 
 let ordineCrescente=false;
 
-function filaCarte(carte,et){
+function filaCarte(carte,et,nascosta){
   const w=el('div');
-  w.appendChild(el('div','filaEt',et));
+  w.appendChild(el('div','filaEt'+(nascosta?' vuota':''),et||'—'));
   const f=el('div','filaCar');
   carte.forEach(c=>f.appendChild(cardEl(c,{})));
   f.querySelectorAll('.card').forEach(x=>x.classList.add('med'));
@@ -898,10 +912,31 @@ function filaCarte(carte,et){
   w.appendChild(f);return w;
 }
 
+function mucchioMio(car,mie,dove){
+  if(ordineCrescente){
+    // stesse tre file, stessa altezza: cambia solo l'ordine delle carte
+    const t=car.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s));
+    dove.appendChild(filaCarte(t.slice(0,6),'Il tuo mucchio'));
+    dove.appendChild(filaCarte(t.slice(6,12),'—',true));
+    dove.appendChild(filaCarte(t.slice(12,18),'—',true));
+    return;
+  }
+  const idIniz=new Set(mie.map(x=>x.c.id));
+  const resto=car.filter(c=>!idIniz.has(c.id));
+  const w=el('div');
+  w.appendChild(el('div','filaEt','Il tuo mucchio'));
+  const f=el('div','filaCar');
+  mie.forEach(x=>{
+    const e=x.coperta?cardSbirciabile(x.c):cardEl(x.c,{});
+    e.classList.add('med'); f.appendChild(e);});
+  w.appendChild(f); dove.appendChild(w);
+  dove.appendChild(filaCarte(resto.slice(0,6),'Prima mano di draft'));
+  dove.appendChild(filaCarte(resto.slice(6,12),'Seconda mano di draft'));
+}
+
 function disegnaDraft(attesa){
   const gr=G.gruppi[G.gruppoIdx], n=G.gruppoIdx;
   const mie=(G.iniziali&&G.iniziali[0])||[], sue=(G.iniziali&&G.iniziali[1])||[];
-  const car=G.v[ME].carovana;
   panel.className='panel draft';
   panel.innerHTML=`
     <h2>Il draft — mano ${n+1} di 2</h2>
@@ -909,41 +944,24 @@ function disegnaDraft(attesa){
     <p>Dodici carte: quattro scoperte, quattro coperte, quattro scoperte.
     Se ne prende una a testa fino ad averne sei ciascuno.
     ${attesa?'<b>Tocca all\'altro viandante…</b>':''}</p>
-    <div class="draftDue">
-      <div class="miaCar" id="miaCar"></div>
-      <div class="colDraft">
-        <div class="rigaEt">Approdo di ${nomeAv()}</div>
-        <div class="iniz" id="inizAv"></div>
-        <div id="draftGrid"></div>
+    <div class="draftTre">
+      <div class="colMio">
+        <div id="miaCar" style="display:flex;flex-direction:column;gap:9px"></div>
+        <button class="btn ghost" id="ordina">${ordineCrescente?'Ordine di presa':'Ordina per valore'}</button>
       </div>
-    </div>
-    <div style="display:flex;justify-content:center;margin-top:10px">
-      <button class="btn ghost" id="ordina">${ordineCrescente?'Ordine di presa':'Ordina per valore'}</button>
+      <div class="destra">
+        <div id="draftGrid"></div>
+        <div class="colSuo">
+          <div class="filaEt suo">Il mucchio di ${nomeAv()}</div>
+          <div class="filaCar tre" id="inizAv"></div>
+        </div>
+      </div>
     </div>`;
 
   const av=$('inizAv');
-  sue.forEach(x=>av.appendChild(cardEl(x.coperta?null:x.c,{coperta:x.coperta,small:true})));
-
-  // la mia Carovana: approdo, prima mano, seconda mano — nell'ordine in cui le ho prese
-  const mc=$('miaCar');
-  if(ordineCrescente){
-    const tutte=car.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s));
-    mc.appendChild(filaCarte(tutte,`La tua Carovana — ${car.length} carte, per valore`));
-  } else {
-    const idIniz=new Set(mie.map(x=>x.c.id));
-    const app=car.filter(c=>idIniz.has(c.id));
-    const resto=car.filter(c=>!idIniz.has(c.id));
-    const f1=resto.slice(0,6), f2=resto.slice(6,12);
-    // le due coperte dell'approdo restano sbirciabili
-    const wa=el('div'); wa.appendChild(el('div','filaEt','Il tuo approdo — clicca le coperte'));
-    const fa=el('div','filaCar');
-    mie.forEach(x=>{
-      const e=x.coperta?cardSbirciabile(x.c):cardEl(x.c,{});
-      e.classList.add('med'); fa.appendChild(e);});
-    wa.appendChild(fa); mc.appendChild(wa);
-    mc.appendChild(filaCarte(f1,'Prima mano di draft'));
-    mc.appendChild(filaCarte(f2,'Seconda mano di draft'));
-  }
+  sue.forEach(x=>{const e=cardEl(x.coperta?null:x.c,{coperta:x.coperta});
+    e.classList.add('pic'); av.appendChild(e);});
+  mucchioMio(G.v[ME].carovana,mie,$('miaCar'));
   $('ordina').onclick=()=>{ordineCrescente=!ordineCrescente;disegnaDraft(attesa);};
 
   const grid=$('draftGrid');
@@ -976,24 +994,14 @@ function schermataPartenza(){
     <h2>La Carovana è pronta</h2>
     <p>Diciotto carte, mescolate al momento della partenza. Da qui in poi non le
     vedrai più tutte insieme: guardale bene adesso.</p>
-    <div class="miaCar" id="miaCar" style="align-items:center"></div>
+    <div class="colMio" id="miaCar" style="margin:0 auto;gap:9px"></div>
     <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:18px">
       <button class="btn ghost" id="ordina">${ordineCrescente?'Ordine di presa':'Ordina per valore'}</button>
       ${puoi?`<button class="btn" id="via2">Che il viaggio inizi!</button>`
             :`<span style="font-size:13px;opacity:.7">In attesa che ${nomeAv()} dia il via…</span>`}
     </div>`;
-  const mc=$('miaCar');
   const mie=(G.iniziali&&G.iniziali[0])||[];
-  if(ordineCrescente){
-    mc.appendChild(filaCarte(car.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s)),
-      `La tua Carovana — ${car.length} carte, per valore`));
-  } else {
-    const idIniz=new Set(mie.map(x=>x.c.id));
-    const app=car.filter(c=>idIniz.has(c.id)), resto=car.filter(c=>!idIniz.has(c.id));
-    mc.appendChild(filaCarte(app,'Il tuo approdo'));
-    mc.appendChild(filaCarte(resto.slice(0,6),'Prima mano di draft'));
-    mc.appendChild(filaCarte(resto.slice(6,12),'Seconda mano di draft'));
-  }
+  mucchioMio(car,mie,$('miaCar'));
   $('ordina').onclick=()=>{ordineCrescente=!ordineCrescente;schermataPartenza();};
   if($('via2'))$('via2').onclick=()=>{
     if(RETE){$('via2').disabled=true;$('via2').textContent='Si parte…';
@@ -1005,6 +1013,7 @@ function schermataPartenza(){
 /* ---------- GIOSTRA ---------- */
 function partiGiostra(){
   iniziaGiostra(G);
+  diarioGiostra();
   ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
   $('app').hidden=false;
   scrivi(`<b>Giostra ${G.giostra}</b> — Castello di ${NOME_SEME[G.assoCorrente.s]}, `+
@@ -1069,6 +1078,74 @@ function adatta(){
   R.setProperty('--sovrm', (n>1&&serve>wDisp) ? '-'+Math.ceil((serve-wDisp)/(n-1))+'px' : '8px');
 }
 addEventListener('resize',()=>{if(G&&!$('app').hidden)disegna();});
+
+/* --- IL DIARIO: resoconto delle partite contro il Bot ------------------- */
+let DIARIO=null;
+function diarioNuovo(){ if(!RETE)DIARIO={inizio:Date.now(),giostre:[],mosse:[]}; }
+function diarioGiostra(){
+  if(!DIARIO)return;
+  DIARIO.g={corrente:G.assoCorrente.s,nemico:G.assoNemico.s,
+    mosse:[],eliminati:0,staffPesca:0,staffScarta:0};
+  DIARIO.giostre.push(DIARIO.g);
+}
+function diarioMossa(t){ if(DIARIO&&DIARIO.g)DIARIO.g.mosse.push(t); }
+function diarioApplausi(R){
+  if(!DIARIO||!DIARIO.g)return;
+  const d=DIARIO.g;
+  d.campi=[ME,BOT].map(i=>{const k=G.v[i].campo;
+    return {cav:k.cav?k.cav.id:null,scu:k.scu?k.scu.id:null,
+      equ:k.equ?k.equ.id:null,giullari:k.giullari.map(c=>c.id)};});
+  d.punti=[
+    {scu:R.scudieri.vincitore===0?PF_SCU:0,cav:R.cavalieri.vincitore===0?PF_CAV:0,istr:R.istrione.a.tot},
+    {scu:R.scudieri.vincitore===1?PF_SCU:0,cav:R.cavalieri.vincitore===1?PF_CAV:0,istr:R.istrione.b.tot}];
+  d.vincitori={scu:R.scudieri.vincitore,cav:R.cavalieri.vincitore};
+  d.spareggio=!!R.cavalieri.spareggio;
+  d.perfetti=[R.cavalieri.a,R.cavalieri.b].filter(c=>c&&c.dist===0).length;
+}
+function archivia(){
+  if(!DIARIO||RETE)return;
+  const comp=v=>({s8:v.filter(c=>c.v===8).length,s9:v.filter(c=>c.v===9).length,
+    s10:v.filter(c=>c.v===10).length,basse:v.filter(c=>c.v<8).length});
+  const tutte=i=>[...G.v[i].carovana,...G.v[i].mano,...G.v[i].scarti,
+    ...[G.v[i].campo.cav,G.v[i].campo.scu,G.v[i].campo.equ].filter(Boolean),
+    ...G.v[i].campo.giullari];
+  const res={v:1,tipo:'bot',draft:MODO,fine:Date.now(),
+    durata:Math.round((Date.now()-DIARIO.inizio)/1000),
+    mappa:G.mappa.map(a=>a.s),
+    viandanti:[ME,BOT].map(i=>{const t=tutte(i);
+      return {carovana:t.map(c=>c.id),comp:comp(t),
+        mucchio:(G.iniziali&&G.iniziali[i]||[]).map(x=>x.c.id),
+        pf:G.v[i].pf,manoFine:G.v[i].mano.length};}),
+    giostre:DIARIO.giostre, mosse:DIARIO.mosse};
+  DIARIO=null;
+  fetch(SERVER+'/archivio',{method:'POST',
+    body:JSON.stringify(res)}).catch(()=>{});
+}
+
+/** I propri scarti, consultabili in qualunque momento della giostra. */
+let scartiOrdinati=true;
+function mostraScarti(){
+  const s=(G.v[ME].scarti||[]).slice();
+  const ov2=$('ovScarti'), p2=$('panelScarti');
+  const carte = scartiOrdinati
+    ? s.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s))
+    : s;
+  ov2.hidden=false;
+  p2.className='panel draft';
+  p2.innerHTML=`<h2>I tuoi scarti — ${s.length} carte</h2>
+    <p>Tutto ciò che hai giocato nelle giostre passate, scartato alla Conta
+    o perso per un Guastafeste. Gli scarti dell'altro viandante restano suoi.</p>
+    <div class="filaCar" id="mucchioScarti" style="width:auto;max-width:100%;justify-content:center"></div>
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px">
+      <button class="btn ghost" id="ordScarti">${scartiOrdinati?'Ordine di scarto':'Ordina per valore'}</button>
+      <button class="btn" id="chiudiScarti">Torna alla giostra</button>
+    </div>`;
+  const box=$('mucchioScarti');
+  if(!carte.length)box.appendChild(el('div','filaEt','Nessuno scarto, per ora.'));
+  carte.forEach(c=>{const e=cardEl(c,{});e.classList.add('med');box.appendChild(e);});
+  $('ordScarti').onclick=()=>{scartiOrdinati=!scartiOrdinati;mostraScarti();};
+  $('chiudiScarti').onclick=()=>{ov2.hidden=true;};
+}
 
 function disegna(){
   adatta();
@@ -1143,6 +1220,13 @@ function disegnaMano(){
   const m=$('mano');m.innerHTML='';
   const az=$('azioni');az.innerHTML='';
   const v=G.v[ME];
+  const bs=$('vediScarti');
+  if(bs){
+    const n=(v.scarti||[]).length;
+    bs.hidden = !(G.fase==='conta'||G.fase==='giostra'||G.fase==='intergiostra'||G.fase==='fine');
+    bs.textContent=`I tuoi scarti · ${n}`;
+    bs.onclick=mostraScarti;
+  }
   const inConta = G.fase==='conta';
   const attesaMia = !!(G.attesa&&G.attesa.p===ME);
   const mioTurno = G.fase==='giostra'&&G.turno===ME&&!v.passato&&!attesaMia;
@@ -1260,6 +1344,8 @@ function giocaIo(id,ruolo){
   if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero di ${nomeAv()}: era <b>${nomeCarta(ev.eliminato)}</b>.`;
   if(c.v===9&&!ev.eliminato&&ruolo==='giullare')t+=' Nessuno Scudiero da eliminare: colpo a vuoto.';
   scrivi(t,'me');
+  diarioMossa(`0:${ruolo}:${id}`);
+  if(ev.eliminato&&DIARIO&&DIARIO.g)DIARIO.g.eliminati++;
   dopoMossa();
 }
 
@@ -1270,6 +1356,8 @@ function risolviMia(scelta){
   if(ev.pescata)scrivi(`${nomeMio()}: con la Staffetta peschi.`,'me');
   else if(ev.scartata)scrivi(`${nomeMio()}: con la Staffetta scarti una carta.`,'me');
   else scrivi('La Staffetta resta in campo senza effetto.','me');
+  if(DIARIO&&DIARIO.g){ if(ev.scartata)DIARIO.g.staffScarta++; else DIARIO.g.staffPesca++;
+    diarioMossa(`0:staffetta:${ev.scartata?'scarta':'pesca'}`); }
   dopoMossa();
 }
 
@@ -1297,10 +1385,13 @@ function turnoBot(){
       if(e2.pescata)t+=' Con la Staffetta sceglie di pescare.';
       else if(e2.scartata)t+=' Con la Staffetta sceglie di scartare una carta.';
       else t+=' La Staffetta resta in campo senza effetto.';
+      if(DIARIO&&DIARIO.g){ if(e2.scartata)DIARIO.g.staffScarta++; else DIARIO.g.staffPesca++; }
     }
     if(ev.eliminato)t+=` Il Guastafeste elimina il tuo Scudiero: era <b>${nomeCarta(ev.eliminato)}</b>.`;
     if(c.v===9&&!ev.eliminato&&m.ruolo==='giullare')t+=' Ma non c\'era nessuno Scudiero da eliminare.';
     scrivi(t,'bot');
+    diarioMossa(`1:${m.ruolo}:${m.id}`);
+    if(ev.eliminato&&DIARIO&&DIARIO.g)DIARIO.g.eliminati++;
   }
   disegna();
   if(G.fase==='applausi')return setTimeout(mostraApplausi,650);
@@ -1316,6 +1407,7 @@ function riga(et,a,b,vinc,nota){
 function mostraApplausi(Rin){
   if(!Rin&&G.fase!=='applausi')return;   // già calcolata: non sommare due volte
   const R=Rin||applausi(G);
+  if(!Rin)diarioApplausi(R);
   const A=G.v[ME],B=G.v[BOT],ac=G.assoCorrente,an=G.assoNemico;
   disegna();
   const fmtS=v=>v?`${v.base}${v.bonus?` +${v.bonus}`:''} = <b>${v.tot}</b>`:'—';
@@ -1382,6 +1474,7 @@ function mostraApplausi(Rin){
 }
 
 function fineViaggio(){
+  archivia();
   ov.classList.remove('laterale');panel.className='panel';
   const A=G.v[ME],B=G.v[BOT];
   const vinco=A.pf>B.pf, pari=A.pf===B.pf;
