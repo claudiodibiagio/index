@@ -724,6 +724,7 @@ function collega(codice,token,nome){
   let ws;
   try{ ws=new WebSocket(url); }catch(e){ return salaErrore('Indirizzo del server non valido.'); }
   RETE={ws,codice,token:token||null,p:null,nome:(nome||'').trim().slice(0,20)};
+  ultimaNota=0;
   G=null;
   salaAttesa(codice,'Collegamento in corso…');
   ws.onopen=()=>salaAttesa(codice,'In attesa dell\'altro viandante…');
@@ -734,7 +735,7 @@ function collega(codice,token,nome){
       location.hash='c='+codice+'&t='+m.token+'&n='+encodeURIComponent(RETE.nome||'');
     }
     else if(m.t==='attesa') salaAttesa(codice,'In attesa dell\'altro viandante…');
-    else if(m.t==='stato')  mostraStato(m.v,m.R,m.collegati);
+    else if(m.t==='stato')  mostraStato(m.v,m.R,m.collegati,m.nota);
     else if(m.t==='pieno')  salaErrore('Questa partita è già al completo.');
     else if(m.t==='errore') scrivi(m.m,'sys');
   };
@@ -764,8 +765,14 @@ function salaErrore(msg){
 }
 
 /** Arriva una vista dal server: la si disegna e basta, senza calcolare nulla. */
-function mostraStato(v,R,collegati){
+let ultimaNota=0;
+function mostraStato(v,R,collegati,nota){
   G=v;
+  if(nota&&nota.id>ultimaNota){
+    ultimaNota=nota.id;
+    if(nota.chi<0) scrivi(nota.testo,'sys');
+    else scrivi(`${nota.chi===0?nomeMio():nomeAv()}: ${nota.testo}`, nota.chi===0?'me':'bot');
+  }
   if(G.fase==='draft'){ ultimaScelta=G.ultima||null; return schermataDraft(); }
   if(G.fase==='pronti') return schermataPartenza();
   $('app').hidden=false;
