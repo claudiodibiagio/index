@@ -880,14 +880,43 @@ function schermataRete(){
   $('torna').onclick=schermataIniziale;
 }
 
-/** Se l'indirizzo contiene un codice, ci si collega da soli. */
+/** Se l'indirizzo contiene un codice: chi rientra si ricollega da solo,
+    chi arriva per la prima volta passa prima dalla schermata del nome. */
 function daIndirizzo(){
   const h=location.hash.replace(/^#/,'');
   if(!h)return false;
   const p=new URLSearchParams(h);
   const c=p.get('c'); if(!c)return false;
-  collega(c,p.get('t')||null,p.get('n')||'');
+  const t=p.get('t');
+  if(t){ collega(c,t,p.get('n')||''); return true; }   // rientro: il posto è già suo
+  schermataInvito(c.toUpperCase());
   return true;
+}
+
+/** Sei stato invitato: prima il nome, poi dentro. */
+function schermataInvito(codice){
+  ov.hidden=false;ov.classList.remove('laterale');panel.className='panel';
+  panel.innerHTML=`
+    <h1>Sei stato invitato</h1>
+    <div class="sub">partita <span style="letter-spacing:.28em;color:var(--oro2)">${codice}</span></div>
+    <p>Un altro viandante ti aspetta. Scrivi come ti chiami e il viaggio comincia:
+    si parte dal draft, sei carte di mucchio e due mani da dodici.</p>
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.6;margin-bottom:6px">Il tuo nome</div>
+      <input id="nomeInv" maxlength="20" placeholder="come ti chiami" autocomplete="off"
+        style="font-family:inherit;font-size:16px;width:230px;padding:9px 12px;border-radius:5px;
+        border:1px solid #4a6b52;background:rgba(0,0,0,.25);color:var(--crema)">
+      <div style="font-size:12px;opacity:.55;margin-top:6px">Serve per la classifica. Se lo lasci vuoto sarai Anonimo.</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:space-between;align-items:center">
+      <button class="btn ghost" id="rinuncia">Torna al menu</button>
+      <button class="btn" id="entraInv">Entra nella partita</button>
+    </div>`;
+  const vai=()=>collega(codice,null,$('nomeInv').value);
+  $('entraInv').onclick=vai;
+  $('nomeInv').onkeydown=e=>{if(e.key==='Enter')vai();};
+  $('rinuncia').onclick=()=>{location.hash='';schermataIniziale();};
+  setTimeout(()=>{try{$('nomeInv').focus();}catch(e){}},50);
 }
 
 function avvia(){
