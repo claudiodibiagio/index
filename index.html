@@ -51,13 +51,14 @@ button{font-family:inherit;cursor:pointer;border:none}
 .card.spenta{filter:grayscale(.7) brightness(.5)}
 
 /* ---------- IMPIANTO A DUE COLONNE ---------- */
-#app{display:grid;grid-template-columns:minmax(280px,0.72fr) minmax(0,1.28fr);
+#app{display:grid;grid-template-columns:minmax(300px,0.80fr) minmax(0,1.20fr);
   gap:14px;height:100vh;padding:12px 14px;align-items:stretch;max-width:1700px;margin:0 auto}
-#sinistra{display:flex;flex-direction:column;justify-content:center;gap:12px;min-width:0;min-height:0}
+#sinistra{display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}
 .pannello{border:1px solid rgba(240,212,136,.22);border-radius:12px;
   background:linear-gradient(rgba(255,255,255,.035),rgba(0,0,0,.12));
   padding:12px 14px;display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0}
 #zonaMano{flex:none;align-self:stretch}
+#zonaLog{flex:1;min-height:0;align-items:stretch}
 #zonaLog{flex:1;min-height:0;align-items:stretch}
 .etichetta{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--oro);
   opacity:.72;text-align:center}
@@ -122,6 +123,12 @@ button{font-family:inherit;cursor:pointer;border:none}
 .hint{font-size:12px;opacity:.82;text-align:center;line-height:1.45;min-height:17px;width:100%}
 
 /* ---------- LA CRONACA ---------- */
+#log{flex:1;min-height:0;overflow-y:auto;font-size:12px;line-height:1.55;opacity:.9;padding-right:6px}
+#log div{padding:2px 0;border-bottom:1px solid rgba(240,212,136,.07)}
+#log .me{color:#a8d9b0}#log .bot{color:#e2b3ae}#log .sys{color:var(--oro2)}
+.card.sbircia{cursor:zoom-in;box-shadow:0 0 0 2px rgba(240,212,136,.55),var(--ombra)}
+.iniz{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin:6px 0}
+.rigaEt{font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;text-align:center;margin-top:10px}
 .avviso{font-size:12.5px;line-height:1.5;text-align:center;min-height:34px;
   max-width:640px;padding:4px 10px;opacity:.86;color:var(--crema)}
 .avviso b{color:var(--oro2);font-weight:600}
@@ -148,7 +155,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 
 /* il draft si prende quasi tutto lo schermo */
 .panel.draft{max-width:min(1240px,95vw)}
-#draftGrid .card{--chd:clamp(112px,38vh,320px);
+#draftGrid .card{--chd:clamp(66px,17vh,152px);
   width:calc(var(--chd)*0.524);height:var(--chd)}
 .panel.draft .card.sm{--chd:0;width:44px;height:84px}
 .panel.draft h2{font-size:23px;text-align:center}
@@ -183,7 +190,7 @@ button{font-family:inherit;cursor:pointer;border:none}
 .rivela .fila{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;max-width:340px}
 
 /* ---------- DRAFT ---------- */
-#draftGrid{display:flex;gap:11px;justify-content:center;flex-wrap:wrap;margin:18px 0 22px}
+#draftGrid{display:grid;grid-template-columns:repeat(4,auto);gap:8px;justify-content:center;margin:8px 0 4px}
 #draftGrid .card{cursor:pointer;transition:.13s}
 #draftGrid .card:hover{transform:translateY(-9px);box-shadow:0 12px 22px rgba(0,0,0,.5)}
 #draftGrid .card.presa{opacity:.14;pointer-events:none;transform:scale(.9)}
@@ -211,6 +218,10 @@ button{font-family:inherit;cursor:pointer;border:none}
       <div id="mano"></div>
       <div class="hint" id="hint"></div>
       <div class="azioni" id="azioni"></div>
+    </section>
+    <section class="pannello" id="zonaLog">
+      <div class="etichetta">Registro del viaggio</div>
+      <div id="log"></div>
     </section>
   </div>
   <main id="centro">
@@ -251,13 +262,21 @@ function nuovaPartita({seed=Date.now()&0xffff,primo=0,nomi=['Tu','Bot']}={}){
     primoDraft:primo,turno:primo,fase:'draft',attesa:null,log:[]};
 }
 function creaDraft(g){
-  const m=mischia(mazzoCompleto(),g.rnd);g.gruppi=[];
-  for(let i=0;i<6;i++){
-    const c=m.slice(i*6,i*6+6), nCop=i<5?2:0;
-    const sc=mischia(c.map((_,k)=>k),g.rnd).slice(0,nCop);
-    g.gruppi.push(c.map((x,k)=>({c:x,coperta:sc.includes(k),presa:null})));
+  const m=mischia(mazzoCompleto(),g.rnd);
+  // 1. l'approdo: sei carte a testa, quattro scoperte e due coperte
+  g.iniziali=[[],[]];
+  for(const p of [0,1]){
+    const sei=m.splice(0,6);
+    const cop=mischia([0,1,2,3,4,5],g.rnd).slice(0,2);
+    g.iniziali[p]=sei.map((c,k)=>({c,coperta:cop.includes(k)}));
+    g.v[p].carovana.push(...sei);
   }
-  g.gruppoIdx=0;g.turno=g.primoDraft;return g;
+  // 2. due gruppi da dodici: riga alta scoperta, riga di mezzo coperta, riga bassa scoperta
+  g.gruppi=[];
+  for(let i=0;i<2;i++)
+    g.gruppi.push(m.splice(0,12).map((c,k)=>({c,coperta:k>=4&&k<8,presa:null})));
+  g.gruppoIdx=0;g.turno=g.primoDraft;
+  return g;
 }
 function prendiInDraft(g,p,i){
   if(g.fase!=='draft')throw new Error('il draft è già concluso');
@@ -268,8 +287,8 @@ function prendiInDraft(g,p,i){
   sl.presa=p;g.v[p].carovana.push(sl.c);   // se era coperta resta coperta
   if(gr.every(s=>s.presa!==null)){
     g.gruppoIdx++;
-    if(g.gruppoIdx>=6){for(const v of g.v)v.carovana=mischia(v.carovana,g.rnd);g.fase='pronti';}
-    else g.turno=g.gruppoIdx%2===0?g.primoDraft:1-g.primoDraft;
+    if(g.gruppoIdx>=2){for(const v of g.v)v.carovana=mischia(v.carovana,g.rnd);g.fase='pronti';}
+    else g.turno=1-g.primoDraft;            // il secondo gruppo lo apre l'altro
   } else g.turno=1-g.turno;
   return g;
 }
@@ -718,8 +737,25 @@ function cardEl(c,{coperta=false,small=false,ace=false}={}){
 }
 /** Una riga sola sotto al tavolo, con le sole informazioni pubbliche. */
 function scrivi(txt,cls){
-  if(cls==='privato')return;                 // non si mostra: la vedresti tu e anche chi ti guarda
-  $('avviso').innerHTML=txt;
+  if(cls==='privato')return;
+  const a=$('avviso'); if(a)a.innerHTML=txt;
+  const l=$('log'); if(!l)return;
+  const d=el('div',cls); d.innerHTML=txt; l.prepend(d);
+}
+function nomeAv(){ return RETE ? 'Viandante '+(2-RETE.p) : 'Bot'; }
+function nomeMio(){ return RETE ? 'Viandante '+(RETE.p+1) : 'Tu'; }
+
+/** Una carta coperta che puoi girare cliccandoci sopra. Solo per le tue. */
+function cardSbirciabile(c,small){
+  const e=el('div','card sbircia'+(small?' sm':''));
+  const mostra=v=>{
+    if(v){ e.classList.remove('back');
+      e.style.backgroundPosition=`${(c.v===1?0:c.v-1)*(100/9)}% ${SEMI.indexOf(c.s)*(100/3)}%`; }
+    else { e.classList.add('back'); e.style.backgroundPosition=''; }
+  };
+  mostra(false); e.title='Clicca per sbirciare';
+  e.onclick=ev=>{ ev.stopPropagation(); e.dataset.on=e.dataset.on?'':'1'; mostra(!!e.dataset.on); };
+  return e;
 }
 
 /* ---------- SCHERMATE ---------- */
@@ -804,7 +840,7 @@ function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
   selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;
-  $('avviso').innerHTML='';
+  if($('avviso'))$('avviso').innerHTML='';if($('log'))$('log').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
   scrivi(G.primoDraft===ME?'Sei stato tu l\'ultimo a viaggiare su una carovana: apri il draft e la prima giostra.'
@@ -845,37 +881,51 @@ function mossaDraftBot(){
 
 function disegnaDraft(attesa){
   const gr=G.gruppi[G.gruppoIdx], n=G.gruppoIdx;
+  const mie=(G.iniziali&&G.iniziali[0])||[], sue=(G.iniziali&&G.iniziali[1])||[];
   panel.className='panel draft';
   panel.innerHTML=`
-    <h2>Il draft — gruppo ${n+1} di 6</h2>
-    <div class="barra">${[0,1,2,3,4,5].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</div>
-    <p>${n<5?'Quattro carte scoperte e due coperte.':'Ultimo gruppo: tutte scoperte.'}
-    ${attesa?'<b>Tocca al bot…</b>':'Prendine una: ne toccherà tre a testa.'}</p>
+    <h2>Il draft — mano ${n+1} di 2</h2>
+    <div class="barra">${[0,1].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</div>
+    <p>Dodici carte: quattro scoperte, quattro coperte, quattro scoperte.
+    Se ne prende una a testa fino ad averne sei ciascuno.
+    ${attesa?'<b>Tocca all\'altro viandante…</b>':''}</p>
+    <div class="rigaEt">Approdo di ${nomeAv()}</div>
+    <div class="iniz" id="inizAv"></div>
     <div id="draftGrid"></div>
-    <div style="font-size:12px;opacity:.6;text-align:center">La tua Carovana — ${G.v[ME].carovana.length} carte</div>
+    <div class="rigaEt">Il tuo approdo — clicca le coperte per sbirciarle</div>
+    <div class="iniz" id="inizMie"></div>
+    <div class="rigaEt">La tua Carovana — ${G.v[ME].carovana.length} carte</div>
     <div class="presi" id="presi"></div>`;
+
+  const av=$('inizAv');
+  sue.forEach(x=>av.appendChild(cardEl(x.coperta?null:x.c,{coperta:x.coperta,small:true})));
+  const mi=$('inizMie');
+  mie.forEach(x=>mi.appendChild(x.coperta?cardSbirciabile(x.c,true):cardEl(x.c,{small:true})));
+
   const grid=$('draftGrid');
   if(attesa)grid.style.opacity='.55';
   gr.forEach((sl,i)=>{
     const box=el('div','cornice');
     if(ultimaScelta&&ultimaScelta.gruppo===n&&ultimaScelta.i===i)box.classList.add('ultima');
-    const e=cardEl(sl.c,{coperta:sl.coperta});   // le coperte restano coperte per sempre
+    const e=cardEl(sl.c,{coperta:sl.coperta});
     if(sl.presa!==null)e.classList.add('presa');
     else if(!attesa) e.onclick=()=>{
-      // il pannello può restare a schermo dopo un cambio di stato: verifico sempre
       if(G.fase!=='draft'||G.turno!==ME||sl.presa!==null)return;
       if(RETE) return inviaAzione({t:'draft',i});
       const era=sl.coperta;
       ultimaScelta={gruppo:G.gruppoIdx,i};
       prendiInDraft(G,ME,i);
-      scrivi(era?'Prendi una carta coperta.':`Prendi <b>${nomeCarta(sl.c)}</b>.`,'me');
+      scrivi(era?`${nomeMio()}: prendi una carta coperta.`:`${nomeMio()}: prendi <b>${nomeCarta(sl.c)}</b>.`,'me');
       schermataDraft();
     };
     else e.style.cursor='default';
     box.appendChild(e);grid.appendChild(box);
   });
+
   const pr=$('presi');
-  G.v[ME].carovana.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s))
+  const idIniz=new Set(mie.map(x=>x.c.id));
+  G.v[ME].carovana.filter(c=>!idIniz.has(c.id))
+    .sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s))
     .forEach(c=>pr.appendChild(cardEl(c,{small:true})));
 }
 
@@ -911,7 +961,7 @@ function nomiSlot(){
 function bloccoPunti(p){
   const v=G.v[p], mio=p===ME;
   const d=el('div','punti '+(mio?'mio':'suo'));
-  d.innerHTML=`<span class="chi">${mio?'Tu':'Il bot'}</span>
+  d.innerHTML=`<span class="chi">${mio?nomeMio():nomeAv()}</span>`+`
     <b class="pf">${v.pf}</b><span class="sotto">Punti Favore</span>
     <div class="mini">Carovana <b>${v.carovana.length}</b></div>
     <div class="mini">Mano <b>${v.mano.length}</b></div>`;
@@ -996,10 +1046,10 @@ function disegna(){
 
   /* --- riga 3: tu --- */
   const duoMe=el('div','pila giu duo');
-  duoMe.appendChild(campoMe.cav?cardEl(campoMe.cav,{coperta:!fine}):slotMio('cavaliere','Cavaliere'));
-  duoMe.appendChild(campoMe.scu?cardEl(campoMe.scu,{coperta:!fine}):slotMio('scudiero','Scudiero','giuLab'));
+  duoMe.appendChild(campoMe.cav?(fine?cardEl(campoMe.cav):cardSbirciabile(campoMe.cav)):slotMio('cavaliere','Cavaliere'));
+  duoMe.appendChild(campoMe.scu?(fine?cardEl(campoMe.scu):cardSbirciabile(campoMe.scu)):slotMio('scudiero','Scudiero','giuLab'));
   put(3,colC,duoMe);
-  put(3,colE, campoMe.equ?cardEl(campoMe.equ,{coperta:!fine}):slotMio('equipaggiamento','Equip.'),'start');
+  put(3,colE, campoMe.equ?(fine?cardEl(campoMe.equ):cardSbirciabile(campoMe.equ)):slotMio('equipaggiamento','Equip.'),'start');
   const gMe=el('div','pila giu');
   campoMe.giullari.forEach(c=>gMe.appendChild(cardEl(c)));
   if(!campoMe.giullari.length)gMe.appendChild(slotMio('giullare','Giullari'));
@@ -1110,7 +1160,7 @@ function disegnaMano(){
       selId=null;
       if(RETE) return inviaAzione({t:'passa'});
       passa(G,ME);
-      scrivi('Passi. Non giocherai più carte in questa giostra.','me');
+      scrivi(`${nomeMio()}: passi. Non giocherai più carte in questa giostra.`,'me');
       dopoMossa();
     };
     az.appendChild(p);
@@ -1132,9 +1182,9 @@ function giocaIo(id,ruolo){
     inScarto=false;disegna();return;
   }
   let t = ruolo==='giullare'
-    ? `Giochi <b>${nomeCarta(c)}</b>.`
-    : `Schieri una carta coperta come <b>${NOME_RUOLO[ruolo]}</b>.`;
-  if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero del bot: era <b>${nomeCarta(ev.eliminato)}</b>.`;
+    ? `${nomeMio()}: giochi <b>${nomeCarta(c)}</b>.`
+    : `${nomeMio()}: schieri una carta coperta come <b>${NOME_RUOLO[ruolo]}</b>.`;
+  if(ev.eliminato)t+=` Il Guastafeste elimina lo Scudiero di ${nomeAv()}: era <b>${nomeCarta(ev.eliminato)}</b>.`;
   if(c.v===9&&!ev.eliminato&&ruolo==='giullare')t+=' Nessuno Scudiero da eliminare: colpo a vuoto.';
   scrivi(t,'me');
   dopoMossa();
@@ -1144,8 +1194,8 @@ function risolviMia(scelta){
   if(RETE){ inScarto=false; inviaAzione({t:'staffetta',scelta}); return; }
   const ev=risolviStaffetta(G,scelta);
   inScarto=false;
-  if(ev.pescata)scrivi('La Staffetta ti fa pescare una carta.','me');
-  else if(ev.scartata)scrivi('Con la Staffetta scarti una carta dalla mano.','me');
+  if(ev.pescata)scrivi(`${nomeMio()}: con la Staffetta peschi.`,'me');
+  else if(ev.scartata)scrivi(`${nomeMio()}: con la Staffetta scarti una carta.`,'me');
   else scrivi('La Staffetta resta in campo senza effetto.','me');
   dopoMossa();
 }
@@ -1161,18 +1211,18 @@ function turnoBot(){
   if(G.turno!==BOT)return;
   const m=botMossa(G,LIV);
   if(m.tipo==='passa'){
-    passa(G,BOT);scrivi('Il bot passa.','bot');
+    passa(G,BOT);scrivi(`${nomeAv()}: passa.`,'bot');
   }else{
     const c=G.v[BOT].mano.find(x=>x.id===m.id);
     const ev=gioca(G,BOT,m.id,m.ruolo);
     let t = m.ruolo==='giullare'
-      ? `Il bot gioca <b>${nomeCarta(c)}</b>.`
-      : `Il bot schiera una carta coperta come <b>${NOME_RUOLO[m.ruolo]}</b>.`;
+      ? `${nomeAv()}: gioca <b>${nomeCarta(c)}</b>.`
+      : `${nomeAv()}: schiera una carta coperta come <b>${NOME_RUOLO[m.ruolo]}</b>.`;
     if(G.attesa&&G.attesa.p===BOT){
       const sc=sceltaStaffettaBot(G,BOT,LIV);
       const e2=risolviStaffetta(G,sc);
-      if(e2.pescata)t+=' La Staffetta gli fa pescare una carta.';
-      else if(e2.scartata)t+=' Con la Staffetta scarta una carta dalla mano.';
+      if(e2.pescata)t+=' Con la Staffetta sceglie di pescare.';
+      else if(e2.scartata)t+=' Con la Staffetta sceglie di scartare una carta.';
       else t+=' La Staffetta resta in campo senza effetto.';
     }
     if(ev.eliminato)t+=` Il Guastafeste elimina il tuo Scudiero: era <b>${nomeCarta(ev.eliminato)}</b>.`;
@@ -1219,9 +1269,9 @@ function mostraApplausi(Rin){
   ov.hidden=false;ov.classList.add('laterale');panel.className='panel applausi';
   panel.innerHTML=`
     <h2>Gli Applausi — Giostra ${G.giostra}</h2>
-    <div class="rivela">${campo(B,'Il bot')}${campo(A,'Tu')}</div>
+    <div class="rivela">${campo(B,nomeAv())}${campo(A,nomeMio())}</div>
     <table class="tab">
-      <tr><th>Castello di ${NOME_SEME[ac.s]} · vicino ${NOME_SEME[an.s]}</th><th style="text-align:right">Bot</th><th style="text-align:right">Tu</th></tr>
+      <tr><th>Castello di ${NOME_SEME[ac.s]} · vicino ${NOME_SEME[an.s]}</th><th style="text-align:right">${nomeAv()}</th><th style="text-align:right">${nomeMio()}</th></tr>
       ${riga('Scudiero',fmtS(R.scudieri.a),fmtS(R.scudieri.b),R.scudieri.vincitore)}
       ${riga(`<i>Il migliore degli Scudieri</i> +${PF_SCU}`,
         R.scudieri.vincitore===0?`+${PF_SCU}`:'—',R.scudieri.vincitore===1?`+${PF_SCU}`:'—',R.scudieri.vincitore)}
@@ -1245,8 +1295,8 @@ function mostraApplausi(Rin){
         ? `<span style="font-size:13px;opacity:.7">In attesa che l'altro viandante prosegua…</span>`
         : `<button class="btn" id="avanti">${G.giostra<3?'Prosegui il viaggio':'La fine del viaggio'}</button>`}
     </div>`;
-  scrivi(`Applausi della giostra ${G.giostra}: tu ${R.pf[0]>=0?'+':''}${R.pf[0]}, `+
-    `bot ${R.pf[1]>=0?'+':''}${R.pf[1]}. Totali ${A.pf} a ${B.pf}.`,'sys');
+  scrivi(`<b>Applausi della giostra ${G.giostra}</b>: ${nomeMio()} ${R.pf[0]>=0?'+':''}${R.pf[0]}, `+
+    `${nomeAv()} ${R.pf[1]>=0?'+':''}${R.pf[1]}. Totali ${A.pf} a ${B.pf}.`,'sys');
   if($('avanti')) $('avanti').onclick=()=>{
     if(RETE){
       if(G.giostra>=3) return fineViaggio();     // la fine del viaggio si mostra qui
@@ -1272,12 +1322,14 @@ function fineViaggio(){
         : 'Le Signore hanno preferito l\'altro viandante. Ci sarà un\'altra carovana, un altro Regno.'}</p>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button class="btn ghost" id="ancora">Un altro viaggio</button>
-      <button class="btn" id="nuovo">Cambia impostazioni</button>
+      <button class="btn" id="nuovo">Torna al menu</button>
     </div>`;
   $('ancora').onclick=()=>{
     if(RETE){try{RETE.ws.close()}catch(e){};RETE=null;location.hash='';}
     ov.hidden=true;avvia();};
-  $('nuovo').onclick=schermataIniziale;
+  $('nuovo').onclick=()=>{
+    if(RETE){try{RETE.ws.close()}catch(e){};RETE=null;}
+    location.hash='';G=null;$('app').hidden=true;schermataIniziale();};
 }
 
 if(!daIndirizzo()) schermataIniziale();
