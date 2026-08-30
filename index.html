@@ -156,6 +156,13 @@ button{font-family:inherit;cursor:pointer;border:none}
   justify-content:center;padding:20px;z-index:50;overflow-y:auto}
 .ov[hidden]{display:none}
 #ovScarti{z-index:60}
+#ovEsci{z-index:70}
+#ovEsci .panel{max-width:min(460px,90vw)}
+#abbandona{position:fixed;top:10px;right:14px;z-index:80;
+  background:transparent;color:rgba(242,234,215,.5);border:1px solid rgba(240,212,136,.22);
+  padding:5px 12px;border-radius:5px;font-size:11.5px;letter-spacing:.05em;transition:.15s}
+#abbandona:hover{color:var(--crema);border-color:rgba(240,212,136,.5);
+  background:rgba(0,0,0,.25)}
 #ovScarti .panel{max-width:min(900px,92vw)}   /* l'attributo hidden da solo non basta: display:flex lo batte */
 
 /* gli Applausi si spostano a sinistra e lasciano il tavolo in chiaro */
@@ -254,6 +261,8 @@ button{font-family:inherit;cursor:pointer;border:none}
 
 <div class="ov" id="ov"><div class="panel" id="panel"></div></div>
 <div class="ov" id="ovScarti" hidden><div class="panel" id="panelScarti"></div></div>
+<div class="ov" id="ovEsci" hidden><div class="panel" id="panelEsci"></div></div>
+<button id="abbandona" hidden>Abbandona la partita</button>
 
 <script>
 /* ==========================================================================
@@ -696,6 +705,7 @@ function codiceACaso(){
   return Array.from({length:4},()=>L[Math.floor(Math.random()*L.length)]).join('');
 }
 function collega(codice,token){
+  $('abbandona').hidden=false;$('abbandona').onclick=chiediUscita;
   codice=codice.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const url=SERVER.replace(/^http/,'ws')+'/ws?codice='+encodeURIComponent(codice)
     +(token?'&token='+encodeURIComponent(token):'');
@@ -790,6 +800,7 @@ function cardSbirciabile(c,small){
 
 /* ---------- SCHERMATE ---------- */
 function schermataIniziale(){
+  $('abbandona').hidden=true;
   ov.hidden=false;ov.classList.remove('laterale');panel.className='panel';
   panel.innerHTML=`
     <h1>Carovana</h1>
@@ -862,6 +873,7 @@ function avvia(){
   G=nuovaPartita({primo:Math.random()<0.5?0:1});
   creaDraft(G);
   selId=null;scartiConta=[];ultimaScelta=null;inScarto=false;diarioNuovo();
+  $('abbandona').hidden=false;$('abbandona').onclick=chiediUscita;
   if($('avviso'))$('avviso').innerHTML='';if($('log'))$('log').innerHTML='';
   $('app').hidden=true;
   $('board').innerHTML='';$('mano').innerHTML='';$('azioni').innerHTML='';$('hint').textContent='';
@@ -1078,6 +1090,32 @@ function adatta(){
   R.setProperty('--sovrm', (n>1&&serve>wDisp) ? '-'+Math.ceil((serve-wDisp)/(n-1))+'px' : '8px');
 }
 addEventListener('resize',()=>{if(G&&!$('app').hidden)disegna();});
+
+/** Abbandonare la partita, con doppia conferma. Una partita interrotta
+    non finisce nell'archivio: si registrano solo i viaggi arrivati in fondo. */
+function chiediUscita(){
+  const ov3=$('ovEsci'), p3=$('panelEsci');
+  ov3.hidden=false; p3.className='panel';
+  p3.innerHTML=`<h2>Abbandonare il viaggio?</h2>
+    <p>La partita in corso verrà annullata e non finirà nell'archivio:
+    si registrano solo i viaggi arrivati agli Applausi della terza giostra.
+    ${RETE?'L\'altro viandante resterà in attesa.':''}</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn ghost" id="restaQui">Annulla</button>
+      <button class="btn" id="esciOra">Abbandona</button>
+    </div>`;
+  $('restaQui').onclick=()=>{ov3.hidden=true;};
+  $('esciOra').onclick=()=>{ov3.hidden=true;abbandona();};
+}
+function abbandona(){
+  DIARIO=null;                                  // niente resoconto per una partita interrotta
+  if(RETE){ try{RETE.ws.close()}catch(e){} RETE=null; location.hash=''; }
+  G=null; selId=null; scartiConta=[]; ultimaScelta=null; inScarto=false;
+  $('app').hidden=true; $('ovScarti').hidden=true; $('abbandona').hidden=true;
+  $('board').innerHTML=''; $('mano').innerHTML=''; $('azioni').innerHTML='';
+  $('hint').textContent=''; if($('log'))$('log').innerHTML='';
+  schermataIniziale();
+}
 
 /* --- IL DIARIO: resoconto delle partite contro il Bot ------------------- */
 let DIARIO=null;
