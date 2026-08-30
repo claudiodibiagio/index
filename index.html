@@ -47,6 +47,13 @@ button{font-family:inherit;cursor:pointer;border:none}
   content:"";position:absolute;inset:6px;border:1px solid rgba(240,212,136,.55);border-radius:3px;
 }
 .card.sm{--ch:64px;--cw:34px;width:34px;height:64px}
+.card.med{--ch:92px;--cw:48px;width:48px;height:92px}
+.draftDue{display:flex;gap:20px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.miaCar{flex:none;display:flex;flex-direction:column;gap:9px;min-width:0}
+.filaCar{display:flex;gap:4px;flex-wrap:wrap;max-width:320px;min-height:92px;
+  align-content:flex-start}
+.filaEt{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;margin-bottom:2px}
+.colDraft{flex:none;display:flex;flex-direction:column;align-items:center}
 .card.ace{box-shadow:0 0 0 2px var(--oro2),var(--ombra)}
 .card.spenta{filter:grayscale(.7) brightness(.5)}
 
@@ -716,6 +723,7 @@ function salaErrore(msg){
 function mostraStato(v,R,collegati){
   G=v;
   if(G.fase==='draft'){ ultimaScelta=G.ultima||null; return schermataDraft(); }
+  if(G.fase==='pronti') return schermataPartenza();
   $('app').hidden=false;
   if(G.fase==='intergiostra'||G.fase==='fine'){ disegna(); return mostraApplausi(R); }
   ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
@@ -858,9 +866,8 @@ function avvia(){
 /* ---------- DRAFT ---------- */
 function schermataDraft(){
   if(G.fase!=='draft'){
-    ov.hidden=true;ov.classList.remove('laterale');panel.innerHTML='';
     scrivi('Draft concluso: 18 carte a testa.','sys');
-    return partiGiostra();
+    return schermataPartenza();
   }
   ov.hidden=false;
   const attesa = G.turno===BOT;
@@ -879,9 +886,22 @@ function mossaDraftBot(){
   schermataDraft();
 }
 
+let ordineCrescente=false;
+
+function filaCarte(carte,et){
+  const w=el('div');
+  w.appendChild(el('div','filaEt',et));
+  const f=el('div','filaCar');
+  carte.forEach(c=>f.appendChild(cardEl(c,{})));
+  f.querySelectorAll('.card').forEach(x=>x.classList.add('med'));
+  if(!carte.length)f.appendChild(el('div','filaEt','—'));
+  w.appendChild(f);return w;
+}
+
 function disegnaDraft(attesa){
   const gr=G.gruppi[G.gruppoIdx], n=G.gruppoIdx;
   const mie=(G.iniziali&&G.iniziali[0])||[], sue=(G.iniziali&&G.iniziali[1])||[];
+  const car=G.v[ME].carovana;
   panel.className='panel draft';
   panel.innerHTML=`
     <h2>Il draft — mano ${n+1} di 2</h2>
@@ -889,18 +909,42 @@ function disegnaDraft(attesa){
     <p>Dodici carte: quattro scoperte, quattro coperte, quattro scoperte.
     Se ne prende una a testa fino ad averne sei ciascuno.
     ${attesa?'<b>Tocca all\'altro viandante…</b>':''}</p>
-    <div class="rigaEt">Approdo di ${nomeAv()}</div>
-    <div class="iniz" id="inizAv"></div>
-    <div id="draftGrid"></div>
-    <div class="rigaEt">Il tuo approdo — clicca le coperte per sbirciarle</div>
-    <div class="iniz" id="inizMie"></div>
-    <div class="rigaEt">La tua Carovana — ${G.v[ME].carovana.length} carte</div>
-    <div class="presi" id="presi"></div>`;
+    <div class="draftDue">
+      <div class="miaCar" id="miaCar"></div>
+      <div class="colDraft">
+        <div class="rigaEt">Approdo di ${nomeAv()}</div>
+        <div class="iniz" id="inizAv"></div>
+        <div id="draftGrid"></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:10px">
+      <button class="btn ghost" id="ordina">${ordineCrescente?'Ordine di presa':'Ordina per valore'}</button>
+    </div>`;
 
   const av=$('inizAv');
   sue.forEach(x=>av.appendChild(cardEl(x.coperta?null:x.c,{coperta:x.coperta,small:true})));
-  const mi=$('inizMie');
-  mie.forEach(x=>mi.appendChild(x.coperta?cardSbirciabile(x.c,true):cardEl(x.c,{small:true})));
+
+  // la mia Carovana: approdo, prima mano, seconda mano — nell'ordine in cui le ho prese
+  const mc=$('miaCar');
+  if(ordineCrescente){
+    const tutte=car.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s));
+    mc.appendChild(filaCarte(tutte,`La tua Carovana — ${car.length} carte, per valore`));
+  } else {
+    const idIniz=new Set(mie.map(x=>x.c.id));
+    const app=car.filter(c=>idIniz.has(c.id));
+    const resto=car.filter(c=>!idIniz.has(c.id));
+    const f1=resto.slice(0,6), f2=resto.slice(6,12);
+    // le due coperte dell'approdo restano sbirciabili
+    const wa=el('div'); wa.appendChild(el('div','filaEt','Il tuo approdo — clicca le coperte'));
+    const fa=el('div','filaCar');
+    mie.forEach(x=>{
+      const e=x.coperta?cardSbirciabile(x.c):cardEl(x.c,{});
+      e.classList.add('med'); fa.appendChild(e);});
+    wa.appendChild(fa); mc.appendChild(wa);
+    mc.appendChild(filaCarte(f1,'Prima mano di draft'));
+    mc.appendChild(filaCarte(f2,'Seconda mano di draft'));
+  }
+  $('ordina').onclick=()=>{ordineCrescente=!ordineCrescente;disegnaDraft(attesa);};
 
   const grid=$('draftGrid');
   if(attesa)grid.style.opacity='.55';
@@ -921,12 +965,41 @@ function disegnaDraft(attesa){
     else e.style.cursor='default';
     box.appendChild(e);grid.appendChild(box);
   });
+}
 
-  const pr=$('presi');
-  const idIniz=new Set(mie.map(x=>x.c.id));
-  G.v[ME].carovana.filter(c=>!idIniz.has(c.id))
-    .sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s))
-    .forEach(c=>pr.appendChild(cardEl(c,{small:true})));
+/** Il draft è finito: si parte solo quando chi ha creato la partita dà il via. */
+function schermataPartenza(){
+  ov.hidden=false;ov.classList.remove('laterale');panel.className='panel draft';
+  const car=G.v[ME].carovana;
+  const puoi = !RETE || RETE.p===0;
+  panel.innerHTML=`
+    <h2>La Carovana è pronta</h2>
+    <p>Diciotto carte, mescolate al momento della partenza. Da qui in poi non le
+    vedrai più tutte insieme: guardale bene adesso.</p>
+    <div class="miaCar" id="miaCar" style="align-items:center"></div>
+    <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:18px">
+      <button class="btn ghost" id="ordina">${ordineCrescente?'Ordine di presa':'Ordina per valore'}</button>
+      ${puoi?`<button class="btn" id="via2">Che il viaggio inizi!</button>`
+            :`<span style="font-size:13px;opacity:.7">In attesa che ${nomeAv()} dia il via…</span>`}
+    </div>`;
+  const mc=$('miaCar');
+  const mie=(G.iniziali&&G.iniziali[0])||[];
+  if(ordineCrescente){
+    mc.appendChild(filaCarte(car.slice().sort((a,b)=>a.v-b.v||SEMI.indexOf(a.s)-SEMI.indexOf(b.s)),
+      `La tua Carovana — ${car.length} carte, per valore`));
+  } else {
+    const idIniz=new Set(mie.map(x=>x.c.id));
+    const app=car.filter(c=>idIniz.has(c.id)), resto=car.filter(c=>!idIniz.has(c.id));
+    mc.appendChild(filaCarte(app,'Il tuo approdo'));
+    mc.appendChild(filaCarte(resto.slice(0,6),'Prima mano di draft'));
+    mc.appendChild(filaCarte(resto.slice(6,12),'Seconda mano di draft'));
+  }
+  $('ordina').onclick=()=>{ordineCrescente=!ordineCrescente;schermataPartenza();};
+  if($('via2'))$('via2').onclick=()=>{
+    if(RETE){$('via2').disabled=true;$('via2').textContent='Si parte…';
+      return inviaAzione({t:'inizia'});}
+    ov.hidden=true;panel.innerHTML='';partiGiostra();
+  };
 }
 
 /* ---------- GIOSTRA ---------- */
