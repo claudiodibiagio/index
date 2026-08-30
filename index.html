@@ -819,7 +819,7 @@ function schermataIniziale(){
       <button data-v="rapido">Draft rapido<small>Le Carovane si formano da sole. Per andare dritti alle giostre.</small></button>
     </div>
     <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:6px">
-      <a class="btn ghost" id="archivio" href="${SERVER}/statistiche" target="_blank"
+      <a class="btn ghost" id="archivio" href="${SERVER}/statistiche?da=${encodeURIComponent(location.origin+location.pathname)}" target="_blank"
          rel="noopener" style="text-decoration:none;display:inline-block">L'archivio dei viaggi</a>
       <button class="btn" id="via">Parti per il Regno</button>
     </div>`;
