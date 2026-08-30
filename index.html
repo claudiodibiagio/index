@@ -1241,13 +1241,17 @@ function mostraApplausi(Rin){
         <td class="n${A.pf>B.pf?' win':''}">${A.pf}</td></tr>
     </table>
     <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn" id="avanti">${G.giostra<3?'Prosegui il viaggio':'La fine del viaggio'}</button>
+      ${(RETE&&RETE.p!==0&&G.giostra<3)
+        ? `<span style="font-size:13px;opacity:.7">In attesa che l'altro viandante prosegua…</span>`
+        : `<button class="btn" id="avanti">${G.giostra<3?'Prosegui il viaggio':'La fine del viaggio'}</button>`}
     </div>`;
   scrivi(`Applausi della giostra ${G.giostra}: tu ${R.pf[0]>=0?'+':''}${R.pf[0]}, `+
     `bot ${R.pf[1]>=0?'+':''}${R.pf[1]}. Totali ${A.pf} a ${B.pf}.`,'sys');
-  $('avanti').onclick=()=>{
-    if(RETE){ $('avanti').disabled=true;
-      $('avanti').textContent='In attesa dell\'altro…';
+  if($('avanti')) $('avanti').onclick=()=>{
+    if(RETE){
+      if(G.giostra>=3) return fineViaggio();     // la fine del viaggio si mostra qui
+      $('avanti').disabled=true;
+      $('avanti').textContent='Si riparte…';
       return inviaAzione({t:'avanti'}); }
     if(G.giostra<3){chiudiGiostra(G);ov.hidden=true;partiGiostra();}
     else fineViaggio();
